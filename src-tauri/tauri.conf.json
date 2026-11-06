@@ -1,0 +1,56 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Mnemo",
+  "version": "1.0.0",
+  "identifier": "app.mnemo.desktop",
+  "build": {
+    "beforeDevCommand": "bun run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "bun run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$CONFIG/mnemo/thumbs/**",
+          "$APPCONFIG/thumbs/**",
+          "$APPLOCALDATA/mnemo/thumbs/**",
+          "$APPDATA/mnemo/thumbs/**"
+        ]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": false,
+    "publisher": "Mnemo contributors",
+    "copyright": "Copyright © 2026 Mnemo contributors. MIT License.",
+    "category": "Productivity",
+    "shortDescription": "Fast local search for files, content, documents and images.",
+    "longDescription": "Mnemo indexes filenames, file contents, PDFs, Office documents and OCR'd images into one local index. It is a desktop app and a read-only search backend for AI agents (MCP + CLI). No cloud, no telemetry.",
+    
+    "licenseFile": "../LICENSE",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installerHooks": "./nsis/hooks.nsh",
+        "installerIcon": "./icons/icon.ico",
+        "uninstallerIcon": "./icons/icon.ico"
+      }
+    },
+    "macOS": {
+      "infoPlist": "Info.plist"
+    }
+  }
+}

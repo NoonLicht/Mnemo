@@ -1,0 +1,46 @@
+[package]
+name = "mnemo-cli"
+version = "1.0.5"
+edition = "2024"
+description = "Agent-facing CLI and MCP server for Mnemo"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "mnemo-cli"
+path = "src/main.rs"
+
+[[bin]]
+name = "mnemo-daemon"
+path = "src/bin/mnemo-daemon.rs"
+
+[[bin]]
+name = "mnemo-quick"
+path = "src/bin/mnemo-quick.rs"
+required-features = ["quick-ui"]
+
+[dependencies]
+mnemo = { path = "../src-tauri" }
+serde_json = "1"
+libc = "0.2"
+eframe = { version = "0.37.0", default-features = false, features = ["glow", "x11", "wayland"], optional = true }
+interprocess = "2.4.7"
+
+# The mnemo lib needs the vendored paddleocr_rs_onnx that exposes
+# `shared_environment` (one ONNX Runtime per process for PP-OCR + Indra).
+# `[patch.crates-io]` is per-workspace, so it must be repeated here for the
+# CLI workspace; plain crates.io 0.2.8 has no `shared_environment` and the
+# CLI does not compile without it.
+[patch.crates-io]
+paddleocr_rs_onnx = { path = "../src-tauri/vendor/paddleocr_rs_onnx" }
+
+[profile.release]
+# Thin LTO + parallel codegen units keeps release builds ~2-3x faster than
+# fat LTO with codegen-units = 1, with near-identical runtime performance.
+codegen-units = 16
+lto = "thin"
+opt-level = 3
+strip = true
+
+[features]
+quick-ui = ["dep:eframe"]

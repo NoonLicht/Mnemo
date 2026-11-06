@@ -1,0 +1,65 @@
+{
+  "app": { "name": "Mnemo" },
+  "actions": {
+    "close": "Close",
+    "cancel": "Cancel",
+    "save": "Save",
+    "copy": "Copy",
+    "open": "Open",
+    "reveal": "Reveal in folder",
+    "details": "Details",
+    "preview": "Preview",
+    "search": "Search",
+    "retry": "Retry",
+    "reset": "Reset"
+  },
+  "units": {
+    "folder": "Folder",
+    "files": "files",
+    "folders": "folders",
+    "results": "results",
+    "result_one": "result",
+    "result_other": "results"
+  },
+  "time": {
+    "justNow": "just now",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago",
+    "monthsAgo": "{{count}}mo ago",
+    "yearsAgo": "{{count}}y ago",
+    "duration": {
+      "zero": "0s",
+      "seconds": "{{count}}s",
+      "minutesSeconds": "{{minutes}}m {{seconds}}s",
+      "hours": "{{hours}}h {{minutes}}m"
+    }
+  },
+  "status": {
+    "loading": "Loading…",
+    "indexing": "Indexing…",
+    "verifying": "Verifying files…",
+    "ready": "Ready",
+    "paused": "Indexing paused",
+    "rebuilding": "Rebuilding index…",
+    "indexingProgress": "Indexing {{done}} of {{total}}",
+    "indexingFiles": "Indexing {{count}} files",
+    "embedding": "{{count}} files · building semantic index",
+    "filesCount": "{{count}} files"
+  },
+  "health": {
+    "issue_one": "{{count}} health issue — open Health",
+    "issue_other": "{{count}} health issues — open Health",
+    "issuesShort_one": "{{count}} issue",
+    "issuesShort_other": "{{count}} issues",
+    "ok": "Index health OK"
+  },
+  "update": {
+    "available": "Update available: {{version}}",
+    "label": "Update"
+  },
+  "stepper": {
+    "decrease": "Decrease",
+    "increase": "Increase"
+  }
+}

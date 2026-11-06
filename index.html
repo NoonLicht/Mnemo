@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mnemo</title>
+<script>
+      // Resolve the theme before first paint to avoid a flash. Mirrors
+      // useTheme.ts: a stored value (including pre-1.1 "paper"/"void")
+      // wins; otherwise follow the OS. If both fail, the hardcoded
+      // data-theme="dark" above stays, matching the config default.
+      var paintTheme = null;
+      try {
+        var stored = localStorage.getItem("mnemo.theme");
+        var map = { paper: "light", light: "light", void: "dark", dark: "dark" };
+        // A stored but unrecognized value is "dark", exactly like
+        // normalizeTheme() in useTheme.ts (never the OS).
+        if (stored) paintTheme = map[stored] || "dark";
+      } catch (e) { /* storage unavailable */ }
+      if (!paintTheme) {
+        try {
+          paintTheme = window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: light)").matches
+            ? "light"
+            : "dark";
+        } catch (e) { /* no matchMedia; keep the hardcoded default */ }
+      }
+      if (paintTheme) document.documentElement.dataset.theme = paintTheme;
+    </script>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

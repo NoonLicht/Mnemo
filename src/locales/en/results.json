@@ -1,0 +1,23 @@
+{
+  "hover": {
+    "folder": "Folder"
+  },
+  "loadingMore": "Loading more",
+  "duplicates": {
+    "title": "Duplicates",
+    "subtitle": "Exact-content matches and near-identical images. Review only — delete in your file manager.",
+    "close": "Close",
+    "finding": "Finding duplicates…",
+    "none": "No duplicates found.",
+    "noneHint": "Exact-content, screenshot-burst, and perceptual-image duplicates will appear here.",
+    "kindBurst": "screenshot burst",
+    "kindExact": "exact content",
+    "kindPerceptual": "similar image",
+    "files": "{{count}} files",
+    "openFile": "Open file",
+    "copyPath": "Copy path",
+    "reveal": "Reveal in folder",
+    "copied": "copied",
+    "loadFailed": "Could not check for duplicates: {{error}}"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "title": "How to search",
+  "keyboard": "Keyboard",
+  "filters": "Filters",
+  "keys": {
+    "showHide": "show or hide the window (launcher mode)",
+    "moveResults": "move into and through results",
+    "moveRow": "move within a row, once you're in the results",
+    "previewResults": "preview, once you're in the results",
+    "previewAnywhere": "preview, from anywhere",
+    "openFile": "open selected file",
+    "showFolder": "show in folder",
+    "copyPath": "copy the selected path (unless text is selected)",
+    "details": "details for selected file",
+    "settings": "settings",
+    "thisSheet": "this sheet",
+    "escape": "close dialog, clear search, then hide (launcher mode)"
+  },
+  "filterDescriptions": {
+    "type": "category or extension",
+    "ext": "exact extension",
+    "in": "scope to a folder",
+    "path": "substring match on path",
+    "modified": "changed within 7 days (1h, 30d, 7d..30d)",
+    "size": "size range (kb, mb, gb)",
+    "aliases": "category aliases",
+    "lang": "language family of extension",
+    "name": "match filename only",
+    "content": "match file contents only",
+    "regex": "regular expression",
+    "time": "time travel filter",
+    "near": "terms within 5 words"
+  }
+}

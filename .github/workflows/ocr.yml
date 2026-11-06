@@ -1,0 +1,106 @@
+name: OCR (real models)
+
+# Runs PP-OCR for real (the actual model pack and ONNX Runtime) on every OS
+# the app ships for. The normal CI only has unit tests, and that is how
+# PP-OCR shipped reading "Open settings" as "Opensettings" and scanned PDFs
+# shipped with no OCR at all. Scoped to OCR-related changes so ordinary PRs
+# don't pay for three extra Rust builds.
+on:
+  pull_request:
+    paths:
+      - "src-tauri/src/ocr.rs"
+      - "src-tauri/src/models.rs"
+      - "src-tauri/src/indexer/extract/**"
+      - "src-tauri/src/indexer/mod.rs"
+      - "src-tauri/Cargo.toml"
+      - "src-tauri/Cargo.lock"
+      - "src-tauri/tests/fixtures/ocr-ui-text/**"
+      - ".github/workflows/ocr.yml"
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: ocr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ocr:
+    name: PP-OCR (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            ort: onnxruntime-linux-x64-1.31.0.tgz
+            ort_sha256: cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57
+            lib: lib/libonnxruntime.so.1.31.0
+          - os: macos-latest
+            ort: onnxruntime-osx-arm64-1.31.0.tgz
+            ort_sha256: 1031b36dd3bdaa8d976a6130d9cf2a05e9be320b93ae804f8427b91dc3432afc
+            lib: lib/libonnxruntime.1.31.0.dylib
+          - os: windows-latest
+            ort: onnxruntime-win-x64-1.31.0.zip
+            ort_sha256: 3958d8a44984160692c1b4ffd0de3cb48f8c39f9d34bb31e433db06e30b82195
+            lib: lib/onnxruntime.dll
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libgtk-3-dev build-essential
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      # `generate_context!` embeds the frontend, so it must exist first.
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ocr-${{ matrix.os }}
+          cache-on-failure: true
+
+      - name: Download the PP-OCR pack and ONNX Runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          pack="$RUNNER_TEMP/ocr-pack"
+          mkdir -p "$pack"
+          fetch() { curl -fsSL --retry 3 -o "$2" "$1"; }
+          fetch https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_det_onnx/resolve/main/inference.onnx "$pack/det.onnx"
+          fetch https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_rec_onnx/resolve/main/inference.onnx "$pack/rec.onnx"
+          fetch https://github.com/GreatV/oar-ocr/releases/download/v0.7.0/ppocrv6_tiny_dict.txt "$pack/dict.txt"
+          # Same checksums the app verifies (src-tauri/src/models.rs).
+          # Hash from stdin: on Windows, sha256sum prefixes the hash with "\"
+          # when the file path contains backslashes.
+          sum() { if command -v sha256sum >/dev/null; then sha256sum < "$1"; else shasum -a 256 < "$1"; fi | cut -d' ' -f1; }
+          check() { [ "$(sum "$1")" = "$2" ] || { echo "checksum mismatch: $1"; exit 1; }; }
+          check "$pack/det.onnx" 193bab7a04fca699a6c82e6abb5b81bdb28177f0abd4062552b04908dafb19f8
+          check "$pack/rec.onnx" 9ef676d6ed3c88256a2d92c640c44f25b0c40947e111b14b8be8f594091563e6
+          check "$pack/dict.txt" c5cbe34ef40c29c4df07ed012bf96569cb69a2d2a01a07027e9f13cb832bd9cd
+
+          archive="$RUNNER_TEMP/${{ matrix.ort }}"
+          fetch "https://github.com/microsoft/onnxruntime/releases/download/v1.31.0/${{ matrix.ort }}" "$archive"
+          check "$archive" ${{ matrix.ort_sha256 }}
+          cd "$RUNNER_TEMP"
+          case "$archive" in
+            *.zip) unzip -q "$archive" ;;
+            *) tar xzf "$archive" ;;
+          esac
+          dir="${{ matrix.ort }}"; dir="${dir%.tgz}"; dir="${dir%.zip}"
+          echo "MNEMO_OCR_PACK_DIR=$pack" >> "$GITHUB_ENV"
+          echo "ORT_DYLIB_PATH=$RUNNER_TEMP/$dir/${{ matrix.lib }}" >> "$GITHUB_ENV"
+
+      # Single-threaded: the OCR engine choice is process-wide state.
+      - name: Run the real-model OCR tests
+        shell: bash
+        run: >
+          cargo test --manifest-path src-tauri/Cargo.toml --release --lib
+          ocr::tests::real -- --include-ignored --test-threads=1 --nocapture
+          --skip real_pack_reads_text

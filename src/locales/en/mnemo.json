@@ -1,0 +1,69 @@
+{
+  "sections": "Sections",
+  "save": "Save",
+  "saved": "Saved",
+  "tabs": {
+    "search": "Search",
+    "ask": "Ask",
+    "activity": "Activity"
+  },
+  "ask": {
+    "title": "Ask your files",
+    "subtitle": "Questions are answered only from your own documents, with a numbered source for every claim.",
+    "placeholder": "What did the budget review cover?",
+    "send": "Ask",
+    "searching": "Searching your files…",
+    "writing": "Writing the answer…",
+    "sources": "Sources",
+    "cited": "cited",
+    "checkTitle": "Check this answer",
+    "invalid": "Cites sources that do not exist: {{list}}.",
+    "unverified": "No citation for:",
+    "noModel": "No language model connected",
+    "modelLine": "Model: {{model}}",
+    "privacy": "Stays on this device",
+    "modelHelp": "Connect any local OpenAI-compatible server (Ollama, llama.cpp, LM Studio). Plain HTTP on this machine only, unless you allow otherwise below. The API key, if any, is read from MNEMO_LLM_API_KEY.",
+    "endpoint": "Endpoint",
+    "model": "Model",
+    "allowRemote": "Allow a server on another machine. Your questions and document passages will leave this device."
+  },
+  "activity": {
+    "title": "Activity",
+    "subtitle": "Where your time went. Stored only on this machine.",
+    "windows": "Track active windows",
+    "windowsHint": "Records which app and window title is in front. Idle time is not counted. Password managers and private windows are skipped.",
+    "browser": "Import browser history",
+    "browserHint": "Reads Chrome, Edge, Brave and Firefox history copies every 30 minutes. Sensitive sites are skipped.",
+    "offTitle": "Nothing is recorded",
+    "offBody": "Turn on a source above to see your day here. It is off until you choose.",
+    "empty": "Nothing recorded in this period yet.",
+    "byApp": "Time by app",
+    "timeline": "Timeline",
+    "web": "Pages visited",
+    "forgetTitle": "Forget",
+    "forgetHint": "Permanently deletes what was recorded.",
+    "lastHour": "Last hour",
+    "lastDay": "Last day",
+    "everything": "Everything",
+    "confirm": "Delete — sure?",
+    "forgotten": "Deleted {{count}} records"
+  },
+  "range": {
+    "hour": "Hour",
+    "day": "Day",
+    "week": "Week"
+  },
+  "security": {
+    "encrypt": "Encrypt data on disk",
+    "encryptHint": "Encrypts the text of your documents in the search index and your activity titles and URLs. The key is bound to your Windows account (DPAPI) and never leaves this computer.",
+    "restart": "Restart Mnemo to apply. Changing this rebuilds the search index; the unencrypted copy is deleted.",
+    "limits": "Not covered: file names and paths in the metadata database, and image thumbnails. Use BitLocker for full-disk protection."
+  },
+  "window": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore",
+    "close": "Close"
+  },
+  "settings": "Settings"
+}

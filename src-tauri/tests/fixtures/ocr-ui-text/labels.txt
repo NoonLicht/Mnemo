@@ -1,0 +1,104 @@
+Open settings
+Search results
+Save changes
+Download complete
+Indexing files
+Cancel operation
+Choose folder
+Remove filter
+Clear search
+Show details
+Hide sidebar
+New window
+Close tab
+Copy path
+Reveal in folder
+Open file
+Rename item
+Delete forever
+Move to trash
+Add to favorites
+Remove favorite
+Sort by name
+Sort by date
+Sort by size
+Filter images
+Filter documents
+Filter audio
+Filter video
+Filter code
+Filter archives
+Recent files
+Pinned items
+Saved searches
+Smart folders
+Quick actions
+Advanced options
+Reset settings
+Export index
+Import index
+Rebuild index
+Stop indexing
+Start indexing
+Pause indexing
+Resume indexing
+Scan complete
+Scan failed
+Permission denied
+File not found
+Network error
+Try again
+Learn more
+Dismiss message
+Enable feature
+Disable feature
+Show password
+Hide password
+Remember me
+Forgot password
+Create account
+Sign in
+Sign out
+Update available
+Restart now
+Later
+Install update
+Skip this version
+Release notes
+Check for updates
+Automatic updates
+Downloading update
+Installing update
+Update failed
+Storage used
+Free space
+Total size
+Last modified
+Created date
+File type
+File size
+Image dimensions
+Page count
+Word count
+Line count
+Character count
+Encoding
+Language
+Author
+Title
+Subject
+Keywords
+Description
+Copyright
+License
+Version
+Build number
+Platform
+Architecture
+Memory usage
+CPU usage
+Disk usage
+Uptime
+Status healthy
+Status warning
+Status critical

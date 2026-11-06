@@ -1,0 +1,113 @@
+{
+  "minimize": "Minimize",
+  "theme": "Theme",
+  "readyMark": "Ready",
+  "indexingMark": "Indexing",
+  "brand": {
+    "step0": {
+      "word": "The memory\nof your computer",
+      "gloss": "Mnemo remembers where everything is, and finds it by name, by text inside files, and by meaning."
+    },
+    "step1": {
+      "word": "It reads\nyour images",
+      "gloss": "Text in screenshots and scans becomes searchable. Everything is recognised on this computer."
+    },
+    "step2": {
+      "word": "Open it\nyour way",
+      "gloss": "A regular window or a quick shortcut. You can change this later."
+    },
+    "scan": {
+      "word": "Remembering",
+      "gloss": "Files are read once. After that, every search is instant."
+    },
+    "done": {
+      "word": "Ready",
+      "gloss": "Ask for a file, a phrase or an idea."
+    }
+  },
+  "done": {
+    "title": "Mnemo is ready.",
+    "pressShortcut": "Press <kbd>{{shortcut}}</kbd> anywhere to open Mnemo.",
+    "openFromTaskbar": "Find Mnemo in your taskbar or Dock anytime.",
+    "closingNote": "Esc or clicking outside hides the window — Mnemo keeps running in the tray.",
+    "quitNote": "Closing the window quits Mnemo. Your index is saved, next launch is instant.",
+    "files": "Files",
+    "readInside": "Read inside",
+    "start": "Start searching"
+  },
+  "scan": {
+    "phases": {
+      "verifying": "Verifying files",
+      "walking": "Finding files",
+      "extracting": "Reading inside documents",
+      "embedding": "Learning what things mean",
+      "committing": "Saving the index",
+      "paused": "Paused",
+      "idle": "Finishing",
+      "starting": "Starting"
+    },
+    "ofFiles": "of {{total}} files",
+    "filesSoFar": "files so far",
+    "finishing": "Finishing",
+    "estimating": "Estimating",
+    "onlyFirstTime": "Only the first time. After this, every launch is instant.",
+    "eta": {
+      "seconds": "~{{seconds}}s left",
+      "minutes": "~{{minutes}}m {{seconds}}s left",
+      "hours": "~{{hours}}h {{minutes}}m left"
+    }
+  },
+  "folders": {
+    "title": "Where do your files live?",
+    "lead": "Pick the folders to search. You can change this later.",
+    "browse": "Browse for folder…",
+    "browseTitle": "Choose folders to search",
+    "pickMany": "pick as many as you like",
+    "pathPlaceholder": "Or type a path — ~ works, commas separate several",
+    "addFolder": "Add folder",
+    "pickerUnavailable": "Folder picker unavailable here — type a path below instead. ({{error}})"
+  },
+  "ocr": {
+    "title": "Read the text in your images",
+    "lead": "Screenshots, scans and photos become searchable. Pick an engine.",
+    "tesseractNote": "Fast, clean ASCII text; no download needed. Fallback engine.",
+    "ppocrNote": "Recommended. ~6 MB, highest recall on dense UI screenshots, fastest batch throughput.",
+    "indraNote": "~27 MB, 80+ languages, rotated/skewed scans; comparable recall, slightly slower.",
+    "notInstalled": "Not installed",
+    "notInBuild": "Not in this build",
+    "downloadFailed": "Download failed: {{error}}",
+    "verifying": "Verifying {{file}}…",
+    "downloadingPercent": "Downloading {{percent}}%",
+    "ready": "Ready",
+    "downloading": "Downloading",
+    "download": "Download"
+  },
+  "mode": {
+    "title": "How should Mnemo open?",
+    "lead": "You can change this anytime in Settings.",
+    "aria": "Window mode",
+    "app": "Window",
+    "launcher": "Launcher",
+    "default": "Default",
+    "appCard": "Normal window in your taskbar. Closing it quits Mnemo.",
+    "launcherCard": "Press a shortcut to open. Esc or click outside to hide. Lives in the tray.",
+    "appNote": "Closing the window quits Mnemo.",
+    "launcherNote": "Closing hides it — Mnemo stays in the tray.",
+    "escHides": "Open shortcut",
+    "pressShortcut": "Press a new shortcut…",
+    "change": "Change",
+    "escCancel": "Esc to cancel",
+    "wayland": "On Wayland, bind mnemo --toggle as a system shortcut if the key doesn't register.",
+    "closingLauncher": "Esc or click outside to hide. Find it again in the tray or with your shortcut."
+  },
+  "footer": {
+    "folders_one": "{{count}} folder",
+    "folders_other": "{{count}} folders",
+    "staysLocal": "Everything stays on this computer.",
+    "downloadToContinue": "Download {{engine}} to continue.",
+    "back": "Back",
+    "continue": "Continue",
+    "startIndexing": "Start indexing"
+  },
+  "setupFailed": "Setup failed: {{error}}"
+}

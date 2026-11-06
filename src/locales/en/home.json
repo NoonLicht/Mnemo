@@ -1,0 +1,12 @@
+{
+  "opened": "Opened {{time}}",
+  "saved": "Saved",
+  "recent": "Recent",
+  "emptyHint": "Ask for a file the way you'd describe it to a friend.",
+  "suggestions": {
+    "resume": "latest resume",
+    "screenshots": "screenshots from last week",
+    "videos": "big videos",
+    "invoice": "invoice"
+  }
+}

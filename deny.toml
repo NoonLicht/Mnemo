@@ -1,0 +1,46 @@
+# Licence policy: SPEC §14 / ADR-0008.
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MPL-2.0",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "0BSD",
+    # Permissive, added for this tree: libbz2-rs-sys (zip), libfuzzer-sys (rav1e), webpki-roots.
+    "bzip2-1.0.6",
+    "NCSA",
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.9
+
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[advisories]
+version = 2
+yanked = "warn"
+# Unmaintained (not vulnerable) transitive crates with no drop-in replacement; each is pulled in by
+# a dependency we do not control. Revisit when tauri / image / imageproc move off them.
+ignore = [
+    { id = "RUSTSEC-2024-0436", reason = "paste: proc-macro via image -> exr -> pulp; build time only" },
+    { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: Linux-only, via tauri's gtk/zbus stack; build time only" },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser: via imageproc -> ab_glyph; parses only fonts we embed" },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant: Linux-only, via tauri's zbus stack" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names: Linux-only, via tauri's zbus stack" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: Linux-only, via tauri's zbus stack" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

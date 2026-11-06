@@ -1,0 +1,157 @@
+{
+  "placeholder": "Search files, content, meaning…",
+  "command": "Command",
+  "clearInput": "Clear (Esc)",
+  "placeholderEmpty": "Type to search",
+  "placeholders": {
+    "everything": "Search everything",
+    "invoice": "invoice from last week",
+    "pdf": "type:pdf in:~/Projects",
+    "chart": "screenshots with a chart"
+  },
+  "resultCount": "{{count}} results",
+  "resultCount_one": "{{count}} result",
+  "resultCount_other": "{{count}} results",
+  "modes": {
+    "ranked": "Ranked",
+    "exhaustive": "Exhaustive"
+  },
+  "sort": {
+    "best": "Best match",
+    "newest": "Newest",
+    "oldest": "Oldest",
+    "largest": "Largest",
+    "name": "Name",
+    "label": "Sort results"
+  },
+  "view": {
+    "grid": "Grid view",
+    "list": "List view",
+    "layout": "Layout",
+    "gridShort": "Grid",
+    "listShort": "List"
+  },
+  "saveSearch": "Save this search",
+  "saveName": "Name this search",
+  "understoodAs": "Understood as",
+  "removeInterpretation": "Remove “{{source}}”",
+  "removeFilter": "Remove filter {{filter}}",
+  "removeFilters": "Remove filters",
+  "tryPdf": "Try type:pdf",
+  "onlyFolders": "Nothing but folders",
+  "noResultsNothing": "Nothing called {{query}}, yet.",
+  "settingsTitle": "Settings",
+  "toast": { "pathCopied": "Path copied" },
+  "filters": {
+    "type": "Type",
+    "ext": "Extension",
+    "in": "In folder",
+    "modified": "Modified",
+    "size": "Size",
+    "clear": "Clear filters",
+    "addFilter": "Add filter"
+  },
+  "slashMenu": {
+    "search": "Search",
+    "filter": "Filter",
+    "help": "Help",
+    "settings": "Settings",
+    "reindex": "Reindex",
+    "recent": "Recent queries"
+  },
+  "slash": {
+    "images": "Screenshots and photos",
+    "pdf": "PDF documents",
+    "docs": "Documents and notes",
+    "code": "Source and config files",
+    "media": "Audio and video",
+    "recent": "Changed in the last week",
+    "errors": "Search for error text",
+    "diagrams": "Search for diagrams",
+    "dupes": "Find duplicate files and images",
+    "reindex": "Re-scan watched folders",
+    "doctor": "Index health report",
+    "settings": "Open Settings"
+  },
+  "contextMenu": {
+    "open": "Open",
+    "reveal": "Reveal in folder",
+    "copyPath": "Copy path",
+    "copyName": "Copy name",
+    "details": "Details",
+    "preview": "Preview",
+    "quickLook": "Quick look"
+  },
+  "empty": {
+    "noResults": "No results",
+    "noResultsHint": "Try a different query or broaden your filters.",
+    "noIndex": "No index yet",
+    "noIndexHint": "Choose folders in Setup to start indexing."
+  },
+  "chips": {
+    "remove": "Remove",
+    "excluded": "Excluded. Click to clear",
+    "includeHint": "Click to include, Alt-click to exclude"
+  },
+  "categories": {
+    "all": "All",
+    "file": "Files",
+    "folder": "Folders",
+    "image": "Images",
+    "doc": "Docs",
+    "code": "Code",
+    "media": "Media",
+    "archive": "Archives",
+    "recent": "Recent"
+  },
+  "interpretation": {
+    "sort": {
+      "newest": "Sort: newest",
+      "oldest": "Sort: oldest",
+      "largest": "Sort: largest"
+    },
+    "time": {
+      "today": "Modified: today",
+      "yesterday": "Modified: yesterday",
+      "last7Days": "Modified: last 7 days",
+      "last30Days": "Modified: last 30 days",
+      "lastYear": "Modified: last year",
+      "lastWeekday": "Modified: last {{weekday}}",
+      "daysAgo": "Modified: {{count}} days ago"
+    },
+    "weekday": {
+      "monday": "Monday",
+      "tuesday": "Tuesday",
+      "wednesday": "Wednesday",
+      "thursday": "Thursday",
+      "friday": "Friday",
+      "saturday": "Saturday",
+      "sunday": "Sunday"
+    },
+    "sizeUnder": "Size: under {{value}}",
+    "sizeOver": "Size: over {{value}}",
+    "visual": "Visual: images",
+    "type": {
+      "images": "Type: images",
+      "pdf": "Type: PDF",
+      "media": "Type: media",
+      "code": "Type: code",
+      "documents": "Type: documents",
+      "folders": "Type: folders",
+      "archives": "Type: archives",
+      "logs": "Type: logs"
+    },
+    "in": "In: {{place}}",
+    "place": {
+      "projects": "In: Projects",
+      "downloads": "In: Downloads",
+      "documents": "In: Documents",
+      "desktop": "In: Desktop",
+      "pictures": "In: Pictures",
+      "videos": "In: Videos",
+      "music": "In: Music",
+      "work": "In: Work"
+    },
+    "alias": "Alias: {{term}}"
+  }
+}

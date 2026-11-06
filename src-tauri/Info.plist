@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>Mnemo indexes files in your Desktop folder so you can search them instantly.</string>
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>Mnemo indexes files in your Documents folder so you can search them instantly.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>Mnemo indexes files in your Downloads folder so you can search them instantly.</string>
+    <key>NSRemovableVolumesUsageDescription</key>
+    <string>Mnemo indexes files on connected removable volumes when selected in your watched folders.</string>
+    <key>NSNetworkVolumesUsageDescription</key>
+    <string>Mnemo indexes files on connected network volumes when selected in your watched folders.</string>
+</dict>
+</plist>

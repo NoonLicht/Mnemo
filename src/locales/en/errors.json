@@ -1,0 +1,5 @@
+{
+  "copyPath": "Couldn't copy the path",
+  "saveSettings": "Failed to save settings: {{error}}",
+  "unknown": "unknown error"
+}

@@ -1,0 +1,64 @@
+name: CI
+
+# Only run for changes that can actually land: PRs and pushes to master.
+# Pushing scratch branches no longer queues two 20-minute Rust jobs.
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web
+    # ubuntu-24.04 is pinned: `ubuntu-latest` will migrate to Ubuntu 26
+    # (actions/runner-images#14748), which would change the toolchain layout
+    # under this job without notice.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bunx tsc --noEmit
+      - run: bun run build
+
+  rust:
+    name: Rust
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            build-essential \
+            curl \
+            wget \
+            file
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      # `generate_context!` embeds `frontendDist`, so the web build must exist
+      # before any cargo command compiles the lib.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Cache Cargo target directory
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings

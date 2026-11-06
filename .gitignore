@@ -1,0 +1,115 @@
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
+node_modules/
+.pnp
+.pnp.js
+.yarn/
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# ---------------------------------------------------------------------------
+# Build output
+# ---------------------------------------------------------------------------
+dist/
+dist-ssr/
+build/
+out/
+*.tsbuildinfo
+src-tauri/target/
+target/
+**/*.rs.bk
+*.pdb
+
+# ---------------------------------------------------------------------------
+# Logs & crash reports
+# ---------------------------------------------------------------------------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+crash.log
+crash.log.*
+
+# ---------------------------------------------------------------------------
+# Environment & secrets
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.local
+
+# ---------------------------------------------------------------------------
+# Editors & IDEs
+# ---------------------------------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.recommended.json
+.idea/
+*.iml
+.fleet/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+*~
+
+# ---------------------------------------------------------------------------
+# OS junk
+# ---------------------------------------------------------------------------
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ---------------------------------------------------------------------------
+# Testing, coverage & tooling artifacts
+# ---------------------------------------------------------------------------
+coverage/
+.nyc_output/
+.playwright-mcp/
+.playwright/
+test-results/
+bench-results/
+*.profraw
+*.profdata
+
+# ---------------------------------------------------------------------------
+# Tauri / Rust local state
+# ---------------------------------------------------------------------------
+src-tauri/gen/android/
+src-tauri/gen/apple/
+src-tauri/.cargo/
+.cargo/
+*.snap.new
+
+# ---------------------------------------------------------------------------
+# Local scratch (not part of the project)
+# ---------------------------------------------------------------------------
+tmp/
+scratch/
+*.tmp
+*.temp
+
+# ONNX Runtime staged by the release builds (release.yml)
+src-tauri/onnxruntime.dll
+src-tauri/libonnxruntime.dylib
+src-tauri/libonnxruntime.so
+
+# Large binaries embedded into the exe at build time (see docs/EMBEDDED.md)
+src-tauri/embedded/
+release/

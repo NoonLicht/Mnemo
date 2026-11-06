@@ -1,0 +1,538 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource-variable/unbounded";
+
+/* ================================================================== */
+/* MNEMO DESIGN SYSTEM                                               */
+/*                                                                     */
+/* One idea: the query is the hero. Everything else recedes.           */
+/*                                                                     */
+/* Type      Inter (UI) · JetBrains Mono (meta) · Instrument Serif     */
+/*           italic (rare moments only: onboarding, empty states).     */
+/*           Scale: 11 meta · 13 body · 15 lead · 20 title ·           */
+/*           34 query · 64 hero. Nothing in between.                   */
+/* Color     Apple neutrals only. Selection and focus are graphite;  */
+/*           the one hue is the system-blue keyboard focus ring.        */
+/*           No gradients or glows behind content.                     */
+/* Space     4px base: 4 8 12 16 24 32 48 64.                          */
+/* Radius    6 (kbd, small) · 10 (controls) · 16 (tiles, panels) ·     */
+/*           24 (sheets) · full (status dots only).                    */
+/*           Bound as --r-small/control/panel/sheet. Use the token,    */
+/*           never a literal: a `rounded-[Npx]` cannot be audited and  */
+/*           does not move when the system moves.                      */
+/* Motion    One curve (--ease). 160 quick, 280 base, 520 slow.        */
+/*                                                                     */
+/* Components reference tokens via Tailwind (bg-bg, text-muted …) or   */
+/* var(--token). No raw colors in components.                          */
+/* ================================================================== */
+
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #fbfbfd;
+  --bg-elevated: #ffffff;
+  --bg-sunken: #f5f5f7;
+  --fg: #1d1d1f;
+  --fg-muted: #6e6e73;
+  --fg-subtle: #a1a1a6;
+  --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.16);
+  --accent: #1d1d1f;
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(0, 0, 0, 0.045);
+  /* Selection and focus. Graphite, never a hue. */
+  --ink: #1d1d1f;
+  --ink-soft: rgba(0, 0, 0, 0.08);
+  --panel: #ffffff;
+  --panel-blur: 0px;
+  --panel-edge: inset 0 0 0 1px var(--border);
+  --shadow-float: 0 1px 2px rgb(0 0 0 / 0.05), 0 10px 30px -10px rgb(0 0 0 / 0.16);
+  /* Floating controls (search capsule, tab capsule). */
+  --control: #ffffff;
+  --control-edge: inset 0 0 0 1px rgba(0, 0, 0, 0.07);
+  --control-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 6px 20px -8px rgb(0 0 0 / 0.14);
+  --control-active: #ffffff;
+  --control-active-edge: 0 1px 2px rgb(0 0 0 / 0.1), inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+  --bar: rgba(251, 251, 253, 0.84);
+  --blue: #0071e3;
+  --pink: #c4566a;
+  --olive: #75703f;
+  --danger: #d70015;
+  --warning: #b25000;
+  --success: #248a3d;
+  --scrim: rgba(0, 0, 0, 0.2);
+  --icon-tint-opacity: 0.12;
+  /* macOS-style window controls, used by the window-mode previews. */
+  --traffic-close: #ff5f57;
+  --traffic-minimize: #febc2e;
+  --traffic-zoom: #28c840;
+}
+
+[data-theme="dark"],
+[data-theme="void"] {
+  color-scheme: dark;
+  --bg: #0b0b0c;
+  --bg-elevated: #1c1c1e;
+  --bg-sunken: #161618;
+  --fg: #f5f5f7;
+  --fg-muted: #98989d;
+  --fg-subtle: #636366;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --accent: #f5f5f7;
+  --accent-fg: #0b0b0c;
+  --accent-soft: rgba(255, 255, 255, 0.06);
+  --ink: #f5f5f7;
+  --ink-soft: rgba(255, 255, 255, 0.12);
+  --panel: #1c1c1e;
+  --panel-blur: 0px;
+  --panel-edge: inset 0 0 0 1px var(--border);
+  --shadow-float: 0 1px 2px rgb(0 0 0 / 0.5), 0 16px 40px -10px rgb(0 0 0 / 0.7);
+  --control: #1c1c1e;
+  --control-edge: inset 0 0 0 1px rgba(255, 255, 255, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --control-shadow: 0 1px 2px rgb(0 0 0 / 0.5), 0 8px 24px -8px rgb(0 0 0 / 0.6);
+  --control-active: #3a3a3c;
+  --control-active-edge: inset 0 0 0 1px rgba(255, 255, 255, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --bar: rgba(11, 11, 12, 0.82);
+  --blue: #0a84ff;
+  --pink: #f09aaa;
+  --olive: #c2bd85;
+  --danger: #ff453a;
+  --warning: #ff9f0a;
+  --success: #30d158;
+  --scrim: rgba(0, 0, 0, 0.55);
+  --icon-tint-opacity: 0.14;
+  /* macOS-style window controls — same vivid hues in both themes. */
+  --traffic-close: #ff5f57;
+  --traffic-minimize: #febc2e;
+  --traffic-zoom: #28c840;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-elevated: var(--bg-elevated);
+  --color-sunken: var(--bg-sunken);
+  --color-fg: var(--fg);
+  --color-muted: var(--fg-muted);
+  --color-subtle: var(--fg-subtle);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-blue: var(--blue);
+  --color-pink: var(--pink);
+  --color-olive: var(--olive);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  /* Radius steps as utilities: rounded-small, rounded-control,
+     rounded-panel, rounded-sheet. */
+  --radius-small: var(--r-small);
+  --radius-control: var(--r-control);
+  --radius-field: var(--r-field);
+  --radius-panel: var(--r-panel);
+  --radius-sheet: var(--r-sheet);
+
+  --font-sans: "Inter Variable", "SF Pro Text", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-serif: "Unbounded Variable", "Inter Variable", system-ui, sans-serif;
+}
+
+/* The radius scale above, bound. Tight, uniform steps in the Apple
+   manner: controls barely round, each step two pixels more, sheets one
+   whisper above panels. Picked by what a thing IS (a key cap, a control,
+   a panel, a sheet) and never by how round it should look. Status dots
+   and capsules stay `rounded-full`: a circle is not a radius step. */
+:root {
+  --r-small: 4px;   /* nested inside a control: kbd, swatch, focus ring */
+  --r-control: 6px; /* anything you click or type in                   */
+  --r-field: 8px;   /* the search field only. The query is the hero, so  */
+                    /* it sits one step above every other control. This  */
+                    /* is the single documented exception to the scale.  */
+  --r-panel: 10px;  /* a tile, card or attached panel                   */
+  --r-sheet: 12px;  /* a centered dialog or sheet. ALL of them.         */
+}
+
+/* Continuous corners. Apple draws every radius as a squircle — a
+   superellipse whose curve eases into the straight edge — which is why
+   their corners read as calm instead of bubbly. Chromium can paint that
+   natively (WebView2 does); the guard degrades to plain arcs elsewhere.
+   Capsules, dots and the scrollbar thumb stay perfectly round. */
+@supports (corner-shape: squircle) {
+  *,
+  ::before,
+  ::after {
+    corner-shape: squircle;
+  }
+  .rounded-full,
+  ::-webkit-scrollbar-thumb {
+    corner-shape: round;
+  }
+}
+
+:root {
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-apple: var(--ease);
+  --dur-quick: 160ms;
+  --dur-base: 280ms;
+  --dur-slow: 520ms;
+}
+
+/* ------------------------------------------------------------------ */
+/* Base                                                                */
+/* ------------------------------------------------------------------ */
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+    border-color: var(--border);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    overflow: hidden;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.5;
+    letter-spacing: -0.006em;
+    font-feature-settings: "cv11", "ss03", "cv05";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    transition: background-color var(--dur-slow) var(--ease), color var(--dur-base) var(--ease);
+  }
+
+  input,
+  textarea {
+    user-select: text;
+    caret-color: var(--ink);
+  }
+
+  /* Native select popups are painted by the OS/WebView, not by the control,
+     so they ignore the inherited foreground. Without explicit colors the
+     dark theme's light text lands on a light popup (and vice versa) and the
+     choices become invisible. */
+  select option,
+  select optgroup {
+    background-color: var(--bg-elevated);
+    color: var(--fg);
+  }
+
+  h1,
+  h2,
+  h3 {
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    font-weight: 600;
+  }
+
+  :focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--blue) 70%, transparent);
+    outline-offset: 2px;
+    border-radius: var(--r-small);
+  }
+
+  ::selection {
+    background: var(--ink-soft);
+    color: var(--fg);
+  }
+
+  mark {
+    background: transparent;
+    color: inherit;
+    font-weight: 650;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Type roles. Six steps, used by name.                                */
+/* ------------------------------------------------------------------ */
+
+.t-meta { font-family: var(--font-mono); font-size: 11px; line-height: 16px; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.t-body { font-size: 13px; line-height: 20px; }
+.t-lead { font-size: 15px; line-height: 22px; letter-spacing: -0.012em; }
+.t-title { font-size: 20px; line-height: 26px; font-weight: 600; letter-spacing: -0.022em; }
+.t-query { font-size: 34px; line-height: 40px; font-weight: 500; letter-spacing: -0.035em; }
+.t-hero { font-family: var(--font-serif); font-weight: 600; font-size: 56px; line-height: 1.02; letter-spacing: -0.03em; }
+.t-moment { font-family: var(--font-sans); font-weight: 400; font-size: 16px; line-height: 1.45; letter-spacing: -0.005em; }
+
+/* Legacy label kept for existing call sites: now sentence-case meta. */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--fg-subtle);
+}
+
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--r-small);
+  background: var(--accent-soft);
+  box-shadow: inset 0 -1px 0 var(--border);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: transparent; border-radius: 9999px; border: 2px solid transparent; background-clip: content-box; }
+*:hover::-webkit-scrollbar-thumb { background-color: var(--border-strong); }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+
+.hairline { border: 1px solid var(--border); }
+
+/* ------------------------------------------------------------------ */
+/* Motion                                                              */
+/* ------------------------------------------------------------------ */
+
+@keyframes row-settle { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.row-enter { opacity: 1; }
+.row-stagger { animation: row-settle var(--dur-base) var(--ease) both; animation-delay: var(--stagger-delay, 0ms); }
+
+@keyframes overlay-rise { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
+.overlay-in { animation: overlay-rise var(--dur-base) var(--ease) both; transform-origin: center; }
+
+@keyframes menu-pop { from { opacity: 0; transform: scale(0.96) translateY(-2px); } to { opacity: 1; transform: none; } }
+.menu-pop { animation: menu-pop var(--dur-quick) var(--ease) both; transform-origin: top left; }
+
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+.fade-in { animation: fade-in var(--dur-base) var(--ease) both; }
+
+@keyframes section-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.section-enter { animation: section-enter var(--dur-base) var(--ease) both; }
+
+@keyframes progress-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+.progress-track { height: 1px; width: 100%; overflow: hidden; background: transparent; }
+.progress-bar { height: 100%; width: 40%; background: var(--fg-muted); animation: progress-slide 1.1s var(--ease) infinite; }
+
+@keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+.dot-pulse { animation: dot-pulse 1.6s ease-in-out infinite; }
+
+@keyframes card-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.card-in { animation: card-in var(--dur-slow) var(--ease) both; animation-delay: var(--stagger-delay, 0ms); }
+
+/* Query text settles as it is typed: a 1px lift, not a flash. */
+@keyframes rise-in { from { opacity: 0; transform: translateY(14px); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
+.rise-in { animation: rise-in var(--dur-slow) var(--ease) both; animation-delay: var(--stagger-delay, 0ms); }
+
+.transition-colors,
+.transition-opacity,
+.transition-transform,
+.transition-all { transition-timing-function: var(--ease); }
+
+.hover-reveal {
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 180ms var(--ease), transform 240ms var(--ease);
+}
+.group:hover .hover-reveal { opacity: 1; transform: none; transition-delay: 260ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .hover-reveal, .group:hover .hover-reveal { transition: none; transform: none; }
+}
+
+/* ------------------------------------------------------------------ */
+/* Components. Every control in the app is one of these.               */
+/* ------------------------------------------------------------------ */
+
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 14px;
+    border-radius: var(--r-control);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    border: 0;
+    transition: background-color var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease),
+      box-shadow var(--dur-quick) var(--ease), transform 120ms var(--ease), opacity var(--dur-quick) var(--ease);
+  }
+  .btn:active:not(:disabled) { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.4; cursor: default; }
+  .btn-primary { background: var(--accent); color: var(--accent-fg); }
+  .btn-primary:hover:not(:disabled) { opacity: 0.86; }
+  .btn-secondary { background: var(--accent-soft); color: var(--fg); box-shadow: inset 0 0 0 1px var(--border); }
+  .btn-secondary:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .btn-ghost { background: transparent; color: var(--fg-muted); }
+  .btn-ghost:hover:not(:disabled) { background: var(--accent-soft); color: var(--fg); }
+  .btn-icon { width: 32px; padding: 0; }
+
+  /* A surface is any panel or card: one radius, one edge, one material. */
+  .surface {
+    background: var(--panel);
+    -webkit-backdrop-filter: blur(var(--panel-blur)) saturate(160%);
+    backdrop-filter: blur(var(--panel-blur)) saturate(160%);
+    box-shadow: var(--panel-edge);
+    border-radius: var(--r-panel);
+  }
+
+  /* Floating layers: menus, dialogs, popovers. */
+  .elevated {
+    background: var(--panel);
+    -webkit-backdrop-filter: blur(max(var(--panel-blur), 24px)) saturate(180%);
+    backdrop-filter: blur(max(var(--panel-blur), 24px)) saturate(180%);
+    box-shadow: var(--panel-edge), var(--shadow-float);
+    border: 0;
+    border-radius: var(--r-panel);
+  }
+
+  .menu-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 32px;
+    padding: 0 10px;
+    border-radius: var(--r-control);
+    font-size: 13px;
+    color: var(--fg);
+    transition: background-color 120ms var(--ease);
+  }
+  .menu-row:hover { background: var(--accent-soft); }
+
+  /* Text tabs. Selection is weight and color, not a filled pill. */
+  .pill {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: var(--r-control);
+    font-size: 13px;
+    font-weight: 450;
+    white-space: nowrap;
+    color: var(--fg-muted);
+    background: transparent;
+    border: 0;
+    transition: background-color var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease), transform 120ms var(--ease);
+    cursor: default;
+  }
+  .pill:hover { color: var(--fg); }
+  .pill:active { transform: scale(0.97); }
+  .pill[aria-checked="true"],
+  .pill[data-active="true"] { color: var(--fg); font-weight: 550; background: var(--accent-soft); }
+
+  .pill-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    border-radius: var(--r-control);
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--border);
+  }
+  /* Concentric with its group: outer radius minus the group's padding. */
+  .pill-group .pill { height: 24px; padding: 0 8px; border-radius: calc(var(--r-control) - 2px); font-weight: 500; }
+  .pill-group .pill[aria-checked="true"] { background: var(--bg-elevated); color: var(--fg); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), inset 0 0 0 1px var(--border); }
+
+  .pill-select { position: relative; display: inline-flex; align-items: center; }
+  .pill-select select {
+    appearance: none;
+    -webkit-appearance: none;
+    height: 28px;
+    padding: 0 24px 0 10px;
+    border-radius: var(--r-control);
+    border: 0;
+    background: transparent;
+    color: var(--fg-muted);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 450;
+    cursor: pointer;
+    transition: color var(--dur-quick) var(--ease), background-color var(--dur-quick) var(--ease);
+  }
+  .pill-select select:hover { color: var(--fg); background: var(--accent-soft); }
+  .pill-select svg { position: absolute; right: 8px; pointer-events: none; color: var(--fg-subtle); }
+
+  /* Form field. Shared by settings and onboarding. */
+  .field {
+    height: 36px;
+    width: 100%;
+    padding: 0 12px;
+    border-radius: var(--r-control);
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--border);
+    color: var(--fg);
+    font-size: 13px;
+    outline: none;
+    transition: box-shadow var(--dur-quick) var(--ease), background-color var(--dur-quick) var(--ease);
+  }
+  .field::placeholder { color: var(--fg-subtle); }
+  .field:focus { box-shadow: inset 0 0 0 1px var(--border-strong), 0 0 0 4px var(--ink-soft); }
+}
+
+/* ------------------------------------------------------------------ */
+/* Floating controls.                                                 */
+/* ------------------------------------------------------------------ */
+
+@layer components {
+  .control {
+    position: relative;
+    isolation: isolate;
+    background: var(--control);
+    box-shadow: var(--control-edge), var(--control-shadow);
+  }
+
+
+  /* Selected segment inside a control capsule. */
+  .seg {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 14px;
+    border-radius: var(--r-control);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--fg-muted);
+    white-space: nowrap;
+    transition: color var(--dur-quick) var(--ease), background-color var(--dur-quick) var(--ease), box-shadow var(--dur-quick) var(--ease);
+  }
+  .seg:hover { color: var(--fg); }
+  .seg[data-active="true"],
+  .seg[aria-checked="true"] {
+    color: var(--fg);
+    background: var(--control-active);
+    box-shadow: var(--control-active-edge);
+  }
+
+  /* Top bar: content scrolls underneath it. */
+  .bar {
+    background: var(--bar);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
+  }
+}

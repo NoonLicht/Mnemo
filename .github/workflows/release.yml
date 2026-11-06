@@ -1,0 +1,350 @@
+name: Release builds
+
+# Builds unsigned desktop bundles and the agent CLI for Linux, macOS and
+# Windows, then assembles a draft GitHub release with every asset and a
+# SHA256SUMS file. A maintainer reviews and publishes the draft; signing
+# secrets are still intentionally absent from this workflow.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bundle:
+    name: Bundles (${{ matrix.platform }})
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            artifact: mnemo-linux
+            args: "--config src-tauri/tauri.onnxruntime.linux.conf.json"
+          - platform: macos-latest
+            artifact: mnemo-macos
+            args: "--target universal-apple-darwin --config src-tauri/tauri.onnxruntime.macos.conf.json"
+          - platform: windows-latest
+            artifact: mnemo-windows
+            args: "--config src-tauri/tauri.onnxruntime.windows.conf.json"
+            arch: x64
+            ort_sha256: 3958d8a44984160692c1b4ffd0de3cb48f8c39f9d34bb31e433db06e30b82195
+          # Native Windows on ARM (Snapdragon) build: x64 builds only run
+          # there under emulation, and the bundled onnxruntime.dll must match
+          # the process architecture or PP-OCR cannot load.
+          - platform: windows-11-arm
+            artifact: mnemo-windows-arm64
+            args: "--config src-tauri/tauri.onnxruntime.windows.conf.json"
+            arch: arm64
+            ort_sha256: ef6206fa8d6975878d93a97035d280240ce5764c126a7430e5427e18923316d5
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            build-essential \
+            curl \
+            wget \
+            file
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: >-
+            ${{
+              matrix.platform == 'macos-latest'
+                && 'aarch64-apple-darwin,x86_64-apple-darwin'
+                || ''
+            }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: bundle-${{ matrix.platform }}
+          cache-on-failure: true
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      # The `ort` crate is built with `load-dynamic` and compiled against
+      # ONNX Runtime 1.31, so PP-OCR only works when that library ships with
+      # the app (see `ocr::runtime_candidates`). Without it the accurate
+      # engine can never load: Windows may even find an old, incompatible
+      # copy in System32, and macOS/Linux have none at all. Each step
+      # downloads Microsoft's official build, verifies it, and stages it for
+      # the per-platform `--config` in the matrix, which adds it as a bundle
+      # resource for release builds only (local builds keep working without
+      # it). 1.31 has no Intel macOS build; on Intel Macs PP-OCR says so and
+      # Tesseract is used.
+      - name: Stage ONNX Runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = "1.31.0"
+          $arch = "${{ matrix.arch }}"
+          $sha256 = "${{ matrix.ort_sha256 }}"
+          $url = "https://github.com/microsoft/onnxruntime/releases/download/v$version/onnxruntime-win-$arch-$version.zip"
+          $zip = Join-Path $env:RUNNER_TEMP "onnxruntime.zip"
+          $out = Join-Path $env:RUNNER_TEMP "onnxruntime"
+          Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+          $actual = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+          if ($actual -ne $sha256) { throw "onnxruntime zip checksum mismatch: $actual" }
+          Expand-Archive -Path $zip -DestinationPath $out -Force
+          Copy-Item -Path (Join-Path $out "onnxruntime-win-$arch-$version\lib\onnxruntime.dll") -Destination "src-tauri\onnxruntime.dll"
+          if (-not (Test-Path "src-tauri\onnxruntime.dll")) { throw "onnxruntime.dll was not staged" }
+
+      - name: Stage ONNX Runtime (macOS, Apple silicon)
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=1.31.0
+          sha256=1031b36dd3bdaa8d976a6130d9cf2a05e9be320b93ae804f8427b91dc3432afc
+          curl -fsSL -o "$RUNNER_TEMP/ort.tgz" \
+            "https://github.com/microsoft/onnxruntime/releases/download/v$version/onnxruntime-osx-arm64-$version.tgz"
+          echo "$sha256  $RUNNER_TEMP/ort.tgz" | shasum -a 256 -c -
+          tar xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
+          cp "$RUNNER_TEMP/onnxruntime-osx-arm64-$version/lib/libonnxruntime.$version.dylib" src-tauri/libonnxruntime.dylib
+          test -s src-tauri/libonnxruntime.dylib
+
+      - name: Stage ONNX Runtime (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=1.31.0
+          sha256=cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57
+          curl -fsSL -o "$RUNNER_TEMP/ort.tgz" \
+            "https://github.com/microsoft/onnxruntime/releases/download/v$version/onnxruntime-linux-x64-$version.tgz"
+          echo "$sha256  $RUNNER_TEMP/ort.tgz" | sha256sum -c -
+          tar xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
+          cp "$RUNNER_TEMP/onnxruntime-linux-x64-$version/lib/libonnxruntime.so.$version" src-tauri/libonnxruntime.so
+          test -s src-tauri/libonnxruntime.so
+
+      # Unsigned builds: no certificates or notarization secrets are required.
+      # To sign later, add the Apple/Windows secrets and the relevant Tauri
+      # signing env vars here (macOS: APPLE_CERTIFICATE, APPLE_SIGNING_IDENTITY,
+      # APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID; Windows: WINDOWS_CERTIFICATE).
+      - name: Build bundles
+        run: bunx tauri build ${{ matrix.args }}
+
+      # Portable build: the raw exe plus a `portable` marker file so
+      # MnemoConfig::config_dir keeps everything (config, metadata DB,
+      # content index, thumbs, OCR state) in <exe_dir>/data — no registry,
+      # no %APPDATA%. The zip is the artifact #68 asks for.
+      - name: Zip Windows portable build
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          New-Item -ItemType Directory -Force -Path "dist\portable" | Out-Null
+          Copy-Item "src-tauri\target\release\mnemo.exe" "dist\portable\mnemo.exe"
+          Set-Content -Path "dist\portable\portable" -Value "" -NoNewline -Encoding ascii
+          @'
+          Mnemo portable
+          ================
+          Run mnemo.exe. Configuration, the index and all data live in
+          the `data` folder next to the exe; nothing is written to the
+          registry or %APPDATA%. Keep the `portable` marker file in place,
+          or Mnemo falls back to the user profile directory.
+
+          The folder must be writable. Requires the system WebView2
+          runtime, preinstalled on Windows 10 1803+ and Windows 11.
+          '@ | Set-Content -Path "dist\portable\README.txt"
+          Compress-Archive -Path "dist\portable\*" -DestinationPath "dist\mnemo-portable-$version-${{ matrix.arch }}.zip" -Force
+          Remove-Item -Recurse -Force "dist\portable"
+          $zip = Get-ChildItem "dist\mnemo-portable-$version-${{ matrix.arch }}.zip"
+          Write-Output "staged $($zip.Name) ($([math]::Round($zip.Length / 1MB, 1)) MB)"
+
+      - name: Upload bundles
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            src-tauri/target/release/bundle/**
+            src-tauri/target/*/release/bundle/**
+            dist/mnemo-portable-*.zip
+          if-no-files-found: error
+
+  cli:
+    name: CLI (${{ matrix.platform }})
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            artifact: mnemo-cli-linux
+            target: x86_64-unknown-linux-gnu
+          - platform: macos-latest
+            artifact: mnemo-cli-macos
+            target: aarch64-apple-darwin
+          - platform: windows-latest
+            artifact: mnemo-cli-windows
+            target: x86_64-pc-windows-msvc
+          - platform: windows-11-arm
+            artifact: mnemo-cli-windows-arm64
+            target: aarch64-pc-windows-msvc
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            build-essential \
+            curl \
+            wget \
+            file
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli -> target
+          key: cli-${{ matrix.platform }}
+          cache-on-failure: true
+
+      # generate_context! embeds the frontend, so build it before cargo.
+      - name: Build frontend
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Build CLI
+        run: cargo build --release --manifest-path cli/Cargo.toml
+
+      - name: Build universal macOS CLI
+        if: matrix.platform == 'macos-latest'
+        run: |
+          rustup target add x86_64-apple-darwin
+          cargo build --release --manifest-path cli/Cargo.toml --target x86_64-apple-darwin
+          mkdir -p dist
+          # The host (macos-latest) is arm64, so the generic build above is the
+          # aarch64 slice; only the x86_64 slice needs an explicit --target.
+          lipo -create \
+            cli/target/release/mnemo-cli \
+            cli/target/x86_64-apple-darwin/release/mnemo-cli \
+            -output dist/mnemo-cli-macos-universal
+
+      - name: Stage CLI (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist
+          os="$(echo "${RUNNER_OS}" | tr '[:upper:]' '[:lower:]')"
+          arch="$(uname -m)"
+          case "${arch}" in
+            x86_64|amd64) arch="x86_64" ;;
+            aarch64|arm64) arch="aarch64" ;;
+          esac
+          cp cli/target/release/mnemo-cli "dist/mnemo-cli-${os}-${arch}"
+          chmod +x "dist/mnemo-cli-${os}-${arch}"
+
+      - name: Stage CLI (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'aarch64' } else { 'x86_64' }
+          Copy-Item cli/target/release/mnemo-cli.exe "dist/mnemo-cli-windows-$arch.exe"
+
+      - name: Upload CLI
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/mnemo-cli-*
+          if-no-files-found: error
+
+  # Assemble one draft GitHub release from both build jobs. A maintainer
+  # reviews the draft, then publishes it; this keeps signing and announcement
+  # decisions out of tag pushes while still collecting every asset in one
+  # place (bundles, CLI binaries, and SHA256SUMS).
+  publish:
+    name: Draft release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [bundle, cli]
+    # ubuntu-24.04 is pinned: `ubuntu-latest` will migrate to Ubuntu 26
+    # (actions/runner-images#14748), which could change release/asset
+    # behavior without notice.
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      # Checkout must run before the artifact download: checkout defaults to
+      # `clean: true`, which wipes the workspace and deletes the downloaded
+      # artifacts (this is what broke the v1.0.1 release runs).
+      - name: Checkout (for release notes generation)
+        uses: actions/checkout@v7
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Check artifacts arrived
+        run: |
+          test -d artifacts
+          find artifacts -type f | grep -q . || { echo "no artifacts downloaded"; exit 1; }
+
+      # Bundle directories contain support files with identical basenames
+      # (icon.icns, icon.ico, ...). Only stage installable artifacts so the
+      # release never gets two assets with the same name.
+      - name: Stage release assets
+        run: |
+          mkdir -p release
+          find artifacts -type f \
+            \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
+               -o -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \
+               -o -name 'mnemo-portable-*.zip' \
+               -o -name 'mnemo-cli-*' \) \
+            -exec cp -t release {} +
+          test -n "$(find release -type f -print -quit)" || { echo "no release assets staged"; exit 1; }
+          cd release
+          find . -type f ! -name SHA256SUMS -exec sha256sum {} + | sort -k2 > SHA256SUMS
+
+      - name: Create or update the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --draft --title "Mnemo $TAG" --generate-notes
+          find release -type f -print0 | xargs -0 gh release upload "$TAG" --clobber

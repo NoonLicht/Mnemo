@@ -1,0 +1,71 @@
+{
+  "app": { "name": "Mnemo" },
+  "actions": {
+    "close": "Закрыть",
+    "cancel": "Отмена",
+    "save": "Сохранить",
+    "copy": "Копировать",
+    "open": "Открыть",
+    "reveal": "Показать в папке",
+    "details": "Подробности",
+    "preview": "Предпросмотр",
+    "search": "Поиск",
+    "retry": "Повторить",
+    "reset": "Сбросить"
+  },
+  "units": {
+    "folder": "Папка",
+    "files": "файлов",
+    "folders": "папок",
+    "results": "результатов",
+    "result_one": "результат",
+    "result_few": "результата",
+    "result_many": "результатов",
+    "result_other": "результата"
+  },
+  "time": {
+    "justNow": "только что",
+    "minutesAgo": "{{count}} мин назад",
+    "hoursAgo": "{{count}} ч назад",
+    "daysAgo": "{{count}} дн назад",
+    "monthsAgo": "{{count}} мес назад",
+    "yearsAgo": "{{count}} г назад",
+    "duration": {
+      "zero": "0 с",
+      "seconds": "{{count}} с",
+      "minutesSeconds": "{{minutes}} мин {{seconds}} с",
+      "hours": "{{hours}} ч {{minutes}} мин"
+    }
+  },
+  "status": {
+    "loading": "Загрузка…",
+    "indexing": "Индексация…",
+    "verifying": "Проверка файлов…",
+    "ready": "Готово",
+    "paused": "Индексация приостановлена",
+    "rebuilding": "Перестроение индекса…",
+    "indexingProgress": "Индексация: {{done}} из {{total}}",
+    "indexingFiles": "Индексация файлов: {{count}}",
+    "embedding": "Файлов: {{count}} · строится смысловой индекс",
+    "filesCount": "Файлов: {{count}}"
+  },
+  "health": {
+    "issue_one": "{{count}} проблема — открыть проверку",
+    "issue_few": "{{count}} проблемы — открыть проверку",
+    "issue_many": "{{count}} проблем — открыть проверку",
+    "issue_other": "{{count}} проблемы — открыть проверку",
+    "issuesShort_one": "{{count}} проблема",
+    "issuesShort_few": "{{count}} проблемы",
+    "issuesShort_many": "{{count}} проблем",
+    "issuesShort_other": "{{count}} проблемы",
+    "ok": "Индекс в порядке"
+  },
+  "update": {
+    "available": "Доступно обновление: {{version}}",
+    "label": "Обновление"
+  },
+  "stepper": {
+    "decrease": "Меньше",
+    "increase": "Больше"
+  }
+}

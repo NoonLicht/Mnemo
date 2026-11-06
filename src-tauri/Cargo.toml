@@ -1,0 +1,114 @@
+[package]
+name = "mnemo"
+license = "MIT"
+version = "1.0.0"
+default-run = "mnemo"
+description = "Blazing-fast local file and content search"
+authors = ["Mnemo contributors"]
+edition = "2024"
+
+[lib]
+name = "mnemo_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "protocol-asset"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-global-shortcut = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tantivy = "0.26"
+nucleo-matcher = "0.3"
+jwalk = "0.9"
+notify = "8"
+fs4 = "1.1"
+dirs = "6"
+log = "0.4"
+auto-launch = "0.6"
+parking_lot = "0.12"
+libc = "0.2"
+open = "5"
+rusqlite = { version = "0.41", features = ["bundled"] }
+regex = "1"
+sha2 = "0.11"
+# Stream cipher for the encrypted tantivy directory (src/crypt.rs).
+chacha20 = "0.9"
+chacha20poly1305 = "0.10"
+rayon = "1.10"
+lopdf = "0.46.0"
+quick-xml = "0.42.0"
+zip = "9.1.0"
+ureq = { version = "2", features = ["tls", "json"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff"] }
+paddleocr_rs_onnx = { version = "0.2.8", default-features = false, optional = true }
+# `load-dynamic`: the prebuilt static onnxruntime archive is compiled
+# against glibc 2.38+ and cannot link on older toolchains (this broke CI's
+# ubuntu-22.04 job when PP-OCRv6 joined the default builds). Dynamic loading
+# needs `libonnxruntime` at runtime; when it is absent the accurate OCR path
+# returns None and extraction falls back to Tesseract, which is always
+# available.
+ort = { version = "2.0.0-rc.15", optional = true, default-features = false, features = ["std", "ndarray", "tracing", "load-dynamic", "api-23"] }
+interprocess = "2.4.7"
+base64 = "0.22"
+tree-sitter = "0.27"
+tree-sitter-rust = "0.24"
+tree-sitter-python = "0.25"
+tree-sitter-javascript = "0.25"
+tree-sitter-typescript = "0.23"
+
+[dev-dependencies]
+# Builds Flate-compressed image streams for the scanned-PDF decoder tests.
+# Already in the tree via zip/png; no new download.
+flate2 = "1"
+tempfile = "3"
+
+[target.'cfg(windows)'.dependencies]
+# Foreground-window hook and idle detection for the opt-in activity timeline.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_Accessibility", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_System_SystemInformation", "Win32_UI_Input_KeyboardAndMouse", "Win32_Security_Cryptography"] }
+# Direct process enumeration for the webview cleanup: taskkill rejects a
+# `PPID eq` filter ("The search filter cannot be recognized"), so the child
+# scan has to run in-process via the Toolhelp32 snapshot API.
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_ProcessStatus",
+  "Win32_System_Threading",
+] }
+
+[profile.release]
+# Thin LTO + parallel codegen units keeps release builds ~2-3x faster than
+# fat LTO with codegen-units = 1, with near-identical runtime performance.
+# Release builds run on every platform for every tag, so build time matters.
+codegen-units = 16
+lto = "thin"
+opt-level = 3
+strip = true
+
+# `make dev` / `tauri dev` should not be 10-50x slower than release for the
+# heavy dependencies. Optimizing dependency code (image decode, Tantivy, PDF
+# parsing) while leaving Mnemo's own code at debug speed keeps incremental
+# rebuilds fast and makes first-scan/profile work realistic. Dropping dependency
+# debug info also cuts several GB from target/debug.
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
+
+[features]
+# Compile the accurate PP-OCRv6 path into normal app builds. The engine still
+# defaults to Tesseract; the model pack is downloaded only when the user opts in.
+default = ["accurate-ocr"]
+accurate-ocr = ["dep:paddleocr_rs_onnx", "dep:ort"]
+smart-embeddings = ["dep:ort"]
+
+# Vendored paddleocr_rs_onnx 0.2.8 (MIT) with one change: its ONNX Runtime
+# environment is public (`shared_environment`), because `ort` allows a single
+# environment per process and Indra OCR needs the same one. Drop this patch
+# once upstream exposes the environment.
+[patch.crates-io]
+paddleocr_rs_onnx = { path = "vendor/paddleocr_rs_onnx" }

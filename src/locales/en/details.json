@@ -1,0 +1,23 @@
+{
+  "title": "Details",
+  "location": "Location",
+  "size": "Size",
+  "modified": "Modified",
+  "matchedBy": "Matched by",
+  "score": "Score",
+  "done": "Done",
+  "match": {
+    "fileName": "file name",
+    "content": "file content",
+    "contentFolded": "content (fuzzy)",
+    "semantic": "meaning",
+    "both": "name and content"
+  },
+  "preview": {
+    "title": "Preview",
+    "open": "Open",
+    "loading": "Loading preview…",
+    "unavailable": "No preview for this file type",
+    "close": "Close"
+  }
+}
