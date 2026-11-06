@@ -33,6 +33,8 @@ Download from the [Releases](../../releases) page:
 |---|---|
 | `Mnemo_1.0.0_x64-setup.exe` | Installer (NSIS). Uninstalling also removes the index and settings. |
 | `Mnemo-portable.exe` | Portable build, no installation. |
+| `Mnemo_1.0.0_amd64.AppImage`, `.deb`, `Mnemo-1.0.0-1.x86_64.rpm` | Linux x64. |
+| `Mnemo_1.0.0_universal.dmg` | macOS (universal build, not signed or notarized). |
 
 The builds are **not code-signed**, so Windows SmartScreen will warn you on first start ("More info" → "Run anyway").
 
