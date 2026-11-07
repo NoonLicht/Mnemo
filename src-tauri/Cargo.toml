@@ -1,7 +1,7 @@
 [package]
 name = "mnemo"
 license = "MIT"
-version = "1.1.0"
+version = "1.1.1"
 default-run = "mnemo"
 description = "Blazing-fast local file and content search"
 authors = ["Mnemo contributors"]
@@ -102,13 +102,17 @@ debug = false
 [features]
 # Compile the accurate PP-OCRv6 path into normal app builds. The engine still
 # defaults to Tesseract; the model pack is downloaded only when the user opts in.
-default = ["accurate-ocr"]
+default = ["accurate-ocr", "cuda"]
 accurate-ocr = ["dep:paddleocr_rs_onnx", "dep:ort"]
 smart-embeddings = ["dep:ort"]
 # Opt-in GPU path for PP-OCR through DirectML. Off by default: it only helps if
 # the loaded onnxruntime.dll was built with the DirectML provider, and the
 # speed-up has to be measured first (examples/ocr_gpu_bench.rs).
 directml = ["accurate-ocr", "paddleocr_rs_onnx/directml"]
+# CUDA provider bindings for the hybrid-OCR helper. They only configure a session
+# when the loaded ONNX Runtime is a GPU build; with the bundled CPU/DirectML
+# runtime nothing changes. Without this feature the helper would silently run on
+# the CPU (v1.1.0 shipped that way).
 cuda = ["accurate-ocr", "paddleocr_rs_onnx/cuda"]
 
 # Vendored paddleocr_rs_onnx 0.2.8 (MIT) with one change: its ONNX Runtime

@@ -18,9 +18,10 @@
 use crate::config::MnemoConfig;
 use crate::ocr::OcrOutcome;
 use serde::Serialize;
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
-use std::sync::{Mutex, mpsc};
+use std::sync::{Condvar, Mutex, mpsc};
 use std::time::Duration;
 
 pub const CPU: &str = "cpu";
@@ -50,7 +51,44 @@ static STARTING: AtomicBool = AtomicBool::new(false);
 static GPU_IMAGES: AtomicU64 = AtomicU64::new(0);
 static CPU_FALLBACKS: AtomicU64 = AtomicU64::new(0);
 static PROBLEM: Mutex<Option<String>> = Mutex::new(None);
-static HELPER: Mutex<Option<Helper>> = Mutex::new(None);
+static QUEUE: Mutex<VecDeque<Job>> = Mutex::new(VecDeque::new());
+static QUEUE_CV: Condvar = Condvar::new();
+static GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// Images the helper takes per turn, and how many may wait for it. Waiting
+/// threads sit idle, so the cap keeps most extraction threads on the CPU.
+/// Default number of threads allowed to wait for the helper: about 5 per 12
+/// logical cores (measured: 6 or more let waiting threads starve the CPU
+/// engine, 2 to 5 gave the best total; see docs/adr/0001).
+fn pending_default() -> usize {
+    let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
+    (cores * 5 / 12).clamp(2, 6)
+}
+
+fn env_usize(name: &str, default: usize) -> usize {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(default)
+}
+
+/// Images per helper turn (`MNEMO_GPU_GROUP`, measured default).
+fn group() -> usize {
+    static V: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *V.get_or_init(|| env_usize("MNEMO_GPU_GROUP", pending_default()))
+}
+
+/// Threads allowed to wait for the helper (`MNEMO_GPU_PENDING`, measured default).
+fn max_pending() -> usize {
+    static V: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *V.get_or_init(|| env_usize("MNEMO_GPU_PENDING", pending_default()))
+}
+
+struct Job {
+    path: String,
+    reply: mpsc::SyncSender<Option<OcrOutcome>>,
+}
 static DOWNLOAD: Mutex<Download> = Mutex::new(Download::new());
 
 struct Helper {
@@ -260,12 +298,17 @@ fn set_problem(message: Option<String>) {
 
 /// Stops the helper and forgets a previous failure.
 fn reset_helper() {
+    GENERATION.fetch_add(1, Ordering::SeqCst);
     READY.store(false, Ordering::SeqCst);
-    if let Some(mut helper) = lock(&HELPER).take() {
-        let _ = helper.child.kill();
-        let _ = helper.child.wait();
-    }
+    answer_waiting_with_fallback();
+    QUEUE_CV.notify_all();
     set_problem(None);
+}
+
+fn answer_waiting_with_fallback() {
+    for job in lock(&QUEUE).drain(..) {
+        let _ = job.reply.send(None);
+    }
 }
 
 /// Starts the helper in the background when hybrid is wanted and possible.
@@ -281,18 +324,26 @@ fn ensure_started() {
     if STARTING.swap(true, Ordering::SeqCst) {
         return;
     }
-    std::thread::spawn(|| {
-        match start_helper() {
-            Ok(helper) => {
-                *lock(&HELPER) = Some(helper);
-                READY.store(true, Ordering::SeqCst);
+    let generation = GENERATION.load(Ordering::SeqCst);
+    std::thread::spawn(move || match start_helper() {
+        Ok(helper) => {
+            if GENERATION.load(Ordering::SeqCst) != generation {
+                // Switched back to CPU while the helper was starting.
+                let mut helper = helper;
+                let _ = helper.child.kill();
+                let _ = helper.child.wait();
+                STARTING.store(false, Ordering::SeqCst);
+                return;
             }
-            Err(message) => {
-                eprintln!("[Mnemo OCR] GPU helper unavailable: {message}");
-                set_problem(Some(message));
-            }
+            READY.store(true, Ordering::SeqCst);
+            STARTING.store(false, Ordering::SeqCst);
+            batcher_loop(helper, generation);
         }
-        STARTING.store(false, Ordering::SeqCst);
+        Err(message) => {
+            eprintln!("[Mnemo OCR] GPU helper unavailable: {message}");
+            set_problem(Some(message));
+            STARTING.store(false, Ordering::SeqCst);
+        }
     });
 }
 
@@ -320,6 +371,9 @@ fn start_helper() -> Result<Helper, String> {
         .env("MNEMO_CUDA_STRICT", "1")
         .env("MNEMO_CUDA_ALGO", "heuristic")
         .env("MNEMO_REC_POOL", "1")
+        // One detector input shape and few recognition batch shapes: otherwise the
+        // GPU libraries build new kernels for almost every screenshot size.
+        .env("MNEMO_DET_CANVAS", "960")
         .env("PATH", path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -327,7 +381,16 @@ fn start_helper() -> Result<Helper, String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        // CREATE_NO_WINDOW, and above-normal priority by default: the helper does
+        // little CPU work but is starved by a CPU engine that saturates every core
+        // (measured: it read 7-25 images at normal priority, 55-70 at above-normal).
+        // `MNEMO_HELPER_PRIORITY=normal` turns that off.
+        let priority = match std::env::var("MNEMO_HELPER_PRIORITY").as_deref() {
+            Ok("normal") => 0,
+            Ok("high") => 0x0000_0080, // HIGH_PRIORITY_CLASS
+            _ => 0x0000_8000,          // ABOVE_NORMAL_PRIORITY_CLASS
+        };
+        command.creation_flags(0x0800_0000 | priority);
     }
     let mut child = command
         .spawn()
@@ -361,21 +424,82 @@ fn start_helper() -> Result<Helper, String> {
     }
 }
 
-fn fail(message: String) {
-    eprintln!("[Mnemo OCR] GPU helper stopped: {message}");
+fn stop_helper(mut helper: Helper, problem: Option<String>) {
     READY.store(false, Ordering::SeqCst);
-    if let Some(mut helper) = lock(&HELPER).take() {
-        let _ = helper.child.kill();
-        let _ = helper.child.wait();
+    let _ = helper.child.kill();
+    let _ = helper.child.wait();
+    answer_waiting_with_fallback();
+    if let Some(message) = problem {
+        eprintln!("[Mnemo OCR] GPU helper stopped: {message}");
+        set_problem(Some(message));
     }
-    set_problem(Some(message));
+}
+
+/// Owns the helper: gathers waiting images into groups, sends a group, hands
+/// each answer back to the thread that asked. Returns when the mode changes or
+/// the helper fails.
+fn batcher_loop(mut helper: Helper, generation: u64) {
+    use std::io::Write;
+
+    loop {
+        let jobs: Vec<Job> = {
+            let mut queue = lock(&QUEUE);
+            loop {
+                if GENERATION.load(Ordering::SeqCst) != generation {
+                    drop(queue);
+                    stop_helper(helper, None);
+                    return;
+                }
+                if !queue.is_empty() {
+                    break;
+                }
+                queue = QUEUE_CV
+                    .wait_timeout(queue, Duration::from_millis(500))
+                    .map(|(guard, _)| guard)
+                    .unwrap_or_else(|p| p.into_inner().0);
+            }
+            let take = queue.len().min(group());
+            queue.drain(..take).collect()
+        };
+        let paths: Vec<&str> = jobs.iter().map(|j| j.path.as_str()).collect();
+        let request = serde_json::to_string(&paths).unwrap_or_default();
+        let sent = writeln!(helper.stdin, "{request}").and_then(|()| helper.stdin.flush());
+        let reply = sent
+            .is_ok()
+            .then(|| helper.lines.recv_timeout(Duration::from_secs(300)).ok())
+            .flatten();
+        let results: Option<Vec<serde_json::Value>> =
+            reply.and_then(|line| serde_json::from_str(&line).ok());
+        let Some(results) = results.filter(|r| r.len() == jobs.len()) else {
+            for job in jobs {
+                let _ = job.reply.send(None);
+            }
+            stop_helper(helper, Some("the GPU helper stopped answering".into()));
+            return;
+        };
+        for (job, item) in jobs.into_iter().zip(results) {
+            let outcome = match item.get("r").and_then(|r| r.as_str()) {
+                Some("text") => item
+                    .get("text")
+                    .and_then(|t| t.as_str())
+                    .map(|t| OcrOutcome::Text(t.to_string())),
+                Some("none") => Some(OcrOutcome::NoText),
+                _ => None,
+            };
+            if outcome.is_some() {
+                GPU_IMAGES.fetch_add(1, Ordering::Relaxed);
+            } else {
+                CPU_FALLBACKS.fetch_add(1, Ordering::Relaxed);
+            }
+            let _ = job.reply.send(outcome);
+        }
+    }
 }
 
 /// Offers an image file to the GPU helper. `None` means "read it on the CPU":
-/// hybrid is off, the helper is not ready or is busy, or it could not answer.
+/// hybrid is off, the helper is not ready, too many images already wait for
+/// it, or it could not read this one.
 pub fn try_offload(path: &Path) -> Option<OcrOutcome> {
-    use std::io::Write;
-
     if mode() != HYBRID {
         return None;
     }
@@ -384,40 +508,19 @@ pub fn try_offload(path: &Path) -> Option<OcrOutcome> {
         return None;
     }
     let text = path.to_str().filter(|p| !p.contains(['\n', '\r']))?;
-    let mut guard = HELPER.try_lock().ok()?;
-    let helper = guard.as_mut()?;
-    if writeln!(helper.stdin, "{text}")
-        .and_then(|()| helper.stdin.flush())
-        .is_err()
+    let (reply, wait) = mpsc::sync_channel(1);
     {
-        drop(guard);
-        fail("the GPU helper closed its input".into());
-        return None;
-    }
-    let reply = match helper.lines.recv_timeout(Duration::from_secs(180)) {
-        Ok(line) => line,
-        Err(_) => {
-            drop(guard);
-            fail("the GPU helper stopped answering".into());
+        let mut queue = lock(&QUEUE);
+        if queue.len() >= max_pending() {
             return None;
         }
-    };
-    drop(guard);
-    let value: serde_json::Value = serde_json::from_str(&reply).ok()?;
-    match value.get("r").and_then(|r| r.as_str()) {
-        Some("text") => {
-            GPU_IMAGES.fetch_add(1, Ordering::Relaxed);
-            Some(OcrOutcome::Text(value.get("text")?.as_str()?.to_string()))
-        }
-        Some("none") => {
-            GPU_IMAGES.fetch_add(1, Ordering::Relaxed);
-            Some(OcrOutcome::NoText)
-        }
-        _ => {
-            CPU_FALLBACKS.fetch_add(1, Ordering::Relaxed);
-            None
-        }
+        queue.push_back(Job {
+            path: text.to_string(),
+            reply,
+        });
     }
+    QUEUE_CV.notify_one();
+    wait.recv_timeout(Duration::from_secs(330)).ok().flatten()
 }
 
 // ---- status and runtime download ---------------------------------------
@@ -622,17 +725,150 @@ mod worker {
         println!("READY");
         let _ = std::io::stdout().flush();
 
+        // One request per line: a JSON array of image paths. One answer per
+        // line: an array of results in the same order.
         let stdin = std::io::stdin();
         for line in stdin.lock().lines().map_while(Result::ok) {
-            let reply = match read_file(&engine, std::path::Path::new(&line)) {
-                Ok(Some(text)) => serde_json::json!({"r": "text", "text": text}),
-                Ok(None) => serde_json::json!({"r": "none"}),
-                Err(message) => serde_json::json!({"r": "fallback", "msg": message}),
-            };
-            println!("{reply}");
+            let paths: Vec<String> = serde_json::from_str(&line).unwrap_or_default();
+            let replies = read_group(&engine, &paths);
+            println!("{}", serde_json::Value::Array(replies));
             let _ = std::io::stdout().flush();
         }
         0
+    }
+
+    /// A decoded and preprocessed image on its way from the preparation thread
+    /// to the GPU thread.
+    struct Prepared {
+        rgb: image::RgbImage,
+        input: paddleocr_rs_onnx::DetInput,
+        width: u32,
+        height: u32,
+    }
+
+    /// Reads a group of images. A second thread decodes and preprocesses the next
+    /// image while the GPU detects the current one, and all the crops of the group
+    /// go through the recogniser together.
+    fn read_group(engine: &OcrEngine, paths: &[String]) -> Vec<serde_json::Value> {
+        let fallback = |msg: &str| serde_json::json!({"r": "fallback", "msg": msg});
+        let (tx, rx) = std::sync::mpsc::sync_channel::<(usize, Option<Prepared>)>(2);
+        let mut replies: Vec<Option<serde_json::Value>> = vec![None; paths.len()];
+        let mut per_image: Vec<Vec<(TextRegion, usize)>> = vec![Vec::new(); paths.len()];
+        let mut crops = Vec::new();
+
+        let started = std::time::Instant::now();
+        let prep_ns = std::sync::atomic::AtomicU64::new(0);
+        let prep_ref = &prep_ns;
+        let mut wait_ns = 0u64;
+        let mut det_ns = 0u64;
+        let mut crop_ns = 0u64;
+        std::thread::scope(|scope| {
+            scope.spawn(move || {
+                for (i, path) in paths.iter().enumerate() {
+                    let t = std::time::Instant::now();
+                    let prepared = image::open(path).ok().and_then(|img| {
+                        let (width, height) = (img.width(), img.height());
+                        let input = OcrEngine::prepare_detection(&img).ok()?;
+                        Some(Prepared {
+                            rgb: img.into_rgb8(),
+                            input,
+                            width,
+                            height,
+                        })
+                    });
+                    prep_ref.fetch_add(
+                        t.elapsed().as_nanos() as u64,
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                    if tx.send((i, prepared)).is_err() {
+                        break;
+                    }
+                }
+            });
+            loop {
+                let t = std::time::Instant::now();
+                let Ok((i, prepared)) = rx.recv() else { break };
+                wait_ns += t.elapsed().as_nanos() as u64;
+                let Some(p) = prepared else {
+                    // Unreadable file: the CPU path reports it the same way.
+                    replies[i] = Some(serde_json::json!({"r": "none"}));
+                    continue;
+                };
+                let t = std::time::Instant::now();
+                let detected = engine.detect_prepared(p.input, p.width, p.height);
+                det_ns += t.elapsed().as_nanos() as u64;
+                let t = std::time::Instant::now();
+                match detected {
+                    Ok(regions) if !regions.is_empty() => {
+                        for region in regions {
+                            if let Ok(crop) = engine.prepare_region_rgb(&p.rgb, &region) {
+                                per_image[i].push((region, crops.len()));
+                                crops.push(crop);
+                            }
+                        }
+                    }
+                    Ok(_) => replies[i] = Some(fallback("no text regions")),
+                    Err(e) => replies[i] = Some(fallback(&format!("detection: {e}"))),
+                }
+                crop_ns += t.elapsed().as_nanos() as u64;
+            }
+        });
+
+        let t = std::time::Instant::now();
+        let decoded = engine.recognize_prepared(&crops, BATCH);
+        if std::env::var_os("MNEMO_WORKER_TRACE").is_some() {
+            eprintln!(
+                "group of {}: wall {:.0} ms | prep thread {:.0} | main waited {:.0} | det {:.0} | crops {:.0} | rec {:.0} ({} crops)",
+                paths.len(),
+                started.elapsed().as_secs_f64() * 1e3,
+                prep_ns.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e6,
+                wait_ns as f64 / 1e6,
+                det_ns as f64 / 1e6,
+                crop_ns as f64 / 1e6,
+                t.elapsed().as_secs_f64() * 1e3,
+                crops.len()
+            );
+            let stages: Vec<String> = paddleocr_rs_onnx::stage_stats::take()
+                .into_iter()
+                .map(|(n, secs)| format!("{n} {:.0} ms", secs * 1e3))
+                .collect();
+            eprintln!("  stages: {}", stages.join(", "));
+        }
+        if !crops.is_empty() && decoded.iter().all(Option::is_none) {
+            return paths
+                .iter()
+                .map(|_| fallback("recognition failed"))
+                .collect();
+        }
+        for (i, regions) in per_image.iter().enumerate() {
+            if replies[i].is_some() {
+                continue;
+            }
+            let mut blocks: Vec<_> = regions
+                .iter()
+                .filter_map(|(region, k)| decoded[*k].clone().map(|t| block_from(region, t)))
+                .filter(|b| !b.text.trim().is_empty())
+                .collect();
+            blocks.sort_by(|a, b| {
+                a.y.partial_cmp(&b.y)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal))
+            });
+            let text = blocks
+                .iter()
+                .map(|b| b.text.trim())
+                .collect::<Vec<_>>()
+                .join("\n");
+            replies[i] = Some(if text.is_empty() {
+                serde_json::json!({"r": "none"})
+            } else {
+                serde_json::json!({"r": "text", "text": text})
+            });
+        }
+        replies
+            .into_iter()
+            .map(|r| r.unwrap_or_else(|| fallback("lost")))
+            .collect()
     }
 
     fn load() -> Result<OcrEngine, String> {
@@ -663,13 +899,6 @@ mod worker {
         Ok(engine)
     }
 
-    fn read_file(engine: &OcrEngine, path: &std::path::Path) -> Result<Option<String>, String> {
-        let Ok(image) = image::open(path) else {
-            return Ok(None);
-        };
-        recognise(engine, &image)
-    }
-
     /// `Ok(None)`: no text. `Err`: let the CPU decide (no regions found, or
     /// the batch failed).
     fn recognise(
@@ -684,8 +913,9 @@ mod worker {
         }
         let mut kept: Vec<&TextRegion> = Vec::new();
         let mut crops = Vec::new();
+        let rgb = image.to_rgb8();
         for region in &regions {
-            if let Ok(crop) = engine.prepare_region(image, region) {
+            if let Ok(crop) = engine.prepare_region_rgb(&rgb, region) {
                 kept.push(region);
                 crops.push(crop);
             }

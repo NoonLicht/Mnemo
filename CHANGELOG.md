@@ -3,6 +3,24 @@
 All notable changes to Mnemo. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [1.1.1] — 2026-11-07
+
+### Fixed
+- **Hybrid OCR now really uses the GPU.** In 1.1.0 the helper was built without
+  the CUDA bindings and silently ran on the CPU. `cuda` is a default feature and
+  the helper refuses to start without it.
+- A failed recognition no longer leaves its session out of the pool (it could
+  hang OCR after a few failures).
+
+### Changed
+- **Faster CPU OCR**: detection uses a pool of sessions instead of one locked
+  session, the class axis of the recogniser is reduced inside the model
+  (ArgMax/ReduceMax, the 6906-class tensor is no longer copied), and the page is
+  converted to RGB once. About 8.2-10.2 s to 6.9-7.4 s for 200 screenshots.
+- Hybrid OCR sends images to the GPU in groups, with a fixed detector input
+  size, a decode/preprocess thread running ahead of the GPU, and above-normal
+  priority. 17-20% faster than CPU-only on the test PC.
+
 ## [1.1.0] — 2026-11-07
 
 ### Added

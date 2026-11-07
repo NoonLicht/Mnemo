@@ -48,11 +48,13 @@ use std::collections::VecDeque;
 use rayon::prelude::*;
 use log::{info, warn};
 
+pub mod stage_stats;
 mod det;#[cfg(feature = "ffi")] pub mod ffi;
 mod decode;
 mod rec;
 mod cls;
 mod error;
+pub use det::DetInput;
 pub use error::PaddleOcrError;
 
 pub use cls::{DocOrientation, OrientationResult, classify_orientation};
@@ -359,6 +361,21 @@ impl AccelerationDevice {
     }
 }
 
+/// Mnemo patch: host-thread tuning for the CPU sessions, from the environment so it
+/// can be measured: `MNEMO_ORT_INTRA` (threads per session) and `MNEMO_ORT_SPIN=0`.
+fn configure_cpu(
+    builder: ort::session::builder::SessionBuilder,
+) -> Result<ort::session::builder::SessionBuilder, PaddleOcrError> {
+    let mut builder = builder;
+    if let Some(n) = std::env::var("MNEMO_ORT_INTRA").ok().and_then(|v| v.parse::<usize>().ok()).filter(|n| *n > 0) {
+        builder = builder.with_intra_threads(n).map_err(|e| PaddleOcrError::General(e.to_string()))?;
+    }
+    if std::env::var("MNEMO_ORT_SPIN").as_deref() == Ok("0") {
+        builder = builder.with_intra_op_spinning(false).map_err(|e| PaddleOcrError::General(e.to_string()))?;
+    }
+    Ok(builder)
+}
+
 /// Mnemo patch: CUDA provider with the cuDNN algorithm search selectable through
 /// `MNEMO_CUDA_ALGO` (`exhaustive` = ORT default, `heuristic`, `default`).
 fn configure_cuda(
@@ -397,6 +414,9 @@ fn configure_cuda(
     }
     #[cfg(not(feature = "cuda"))]
     {
+        if std::env::var_os("MNEMO_CUDA_STRICT").is_some() {
+            return Err(PaddleOcrError::General("this build has no CUDA support".into()));
+        }
         warn!("[ep] CUDA feature disabled, falling back to CPU");
         Ok(builder)
     }
@@ -434,7 +454,7 @@ fn configure_session_builder(
     }
 
     match device {
-        AccelerationDevice::Cpu => Ok(builder),
+        AccelerationDevice::Cpu => configure_cpu(builder),
         AccelerationDevice::DirectML => configure_ep!("directml", ort::ep::DirectML),
         AccelerationDevice::Cuda => configure_cuda(builder),
         AccelerationDevice::OpenVINO => configure_ep!("openvino", ort::ep::OpenVINO),
@@ -477,7 +497,10 @@ fn configure_session_builder(
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct OcrEngine {
-    det_session: Mutex<ort::session::Session>,
+    /// Detector sessions. A pool, like the recogniser's: a single locked session
+    /// serialised detection across every extraction thread (Mnemo patch).
+    det_sessions: Mutex<VecDeque<ort::session::Session>>,
+    det_sessions_cvar: Condvar,
     rec_sessions: Mutex<VecDeque<ort::session::Session>>,
     rec_sessions_cvar: Condvar,
     det_input: String,
@@ -638,8 +661,18 @@ impl OcrEngine {
             );
         }
 
+        let mut det_sessions = VecDeque::with_capacity(pool_size);
+        det_sessions.push_back(det_session);
+        for _ in 1..pool_size {
+            det_sessions.push_back(
+                configure_session_builder(session_builder()?, device)?
+                    .commit_from_memory(det_model)?,
+            );
+        }
+
         Ok(Self {
-            det_session: Mutex::new(det_session),
+            det_sessions: Mutex::new(det_sessions),
+            det_sessions_cvar: Condvar::new(),
             rec_sessions: Mutex::new(sessions),
             rec_sessions_cvar: Condvar::new(),
             det_input,
@@ -702,8 +735,38 @@ impl OcrEngine {
     ///
     /// [`recognize_all`]: OcrEngine::recognize_all
     pub fn detect_text_regions(&self, image: &DynamicImage) -> Result<Vec<TextRegion>, PaddleOcrError> {
-        let mut session = self.det_session.lock();
-        det::detect_text_regions(&mut session, image, &self.det_input, &self.det_output)
+        let (w, h) = (image.width(), image.height());
+        self.detect_prepared(det::prepare(image)?, w, h)
+    }
+
+    /// Mnemo patch: the detector input for an image. Cheap to compute on another
+    /// thread while a session is busy; pair with [`detect_prepared`](Self::detect_prepared).
+    pub fn prepare_detection(image: &DynamicImage) -> Result<DetInput, PaddleOcrError> {
+        det::prepare(image)
+    }
+
+    /// Mnemo patch: detection from a prepared input. Only inference holds a
+    /// session; the contour work runs outside any lock so extraction threads
+    /// detect in parallel.
+    pub fn detect_prepared(&self, input: DetInput, orig_w: u32, orig_h: u32) -> Result<Vec<TextRegion>, PaddleOcrError> {
+        let scale = input.scale();
+        let mut session = {
+            let mut pool = self.det_sessions.lock();
+            loop {
+                if let Some(s) = pool.pop_front() {
+                    break s;
+                }
+                self.det_sessions_cvar.wait(&mut pool);
+            }
+        };
+        let result = det::infer(&mut session, input, &self.det_input, &self.det_output);
+        {
+            let mut pool = self.det_sessions.lock();
+            pool.push_back(session);
+            self.det_sessions_cvar.notify_one();
+        }
+        let (prob, out_h, out_w) = result?;
+        Ok(det::finish(&prob, out_h, out_w, orig_w, orig_h, scale))
     }
 
     /// Recognize text within a single detected region.
@@ -741,7 +804,14 @@ impl OcrEngine {
     /// [`detect_text_regions`]: OcrEngine::detect_text_regions
     /// [`recognize_all`]: OcrEngine::recognize_all
     pub fn recognize_text(&self, image: &DynamicImage, region: &TextRegion) -> Result<decode::DecodedText, PaddleOcrError> {
-        let (data, width) = rec::preprocess_region(image, region, self.rec_height, self.rec_width)?;
+        self.recognize_text_rgb(&image.to_rgb8(), region)
+    }
+
+    /// Mnemo patch: [`recognize_text`](Self::recognize_text) for an image already in RGB8.
+    pub fn recognize_text_rgb(&self, rgb: &image::RgbImage, region: &TextRegion) -> Result<decode::DecodedText, PaddleOcrError> {
+        let t = std::time::Instant::now();
+        let (data, width) = rec::preprocess_region_rgb(rgb, region, self.rec_height, self.rec_width)?;
+        stage_stats::add(stage_stats::REC_PRE, t);
 
         // Pop a session from the pool, blocking until one is available
         let mut session = {
@@ -754,17 +824,49 @@ impl OcrEngine {
             }
         };
 
-        let result = rec::run_recognition(&mut session, &data, width, self.rec_height, &self.rec_input, &self.rec_output)?;
+        // A recogniser with on-device argmax outputs skips copying the full
+        // [steps, classes] tensor.
+        if let Some((idx_name, max_name)) = &self.rec_argmax {
+            let t = std::time::Instant::now();
+            let result = rec::run_recognition_batch_argmax(
+                &mut session, data, 1, width, self.rec_height, &self.rec_input, idx_name, max_name,
+            );
+            stage_stats::add(stage_stats::REC_RUN, t);
+            {
+                let mut pool = self.rec_sessions.lock();
+                pool.push_back(session);
+                self.rec_sessions_cvar.notify_one();
+            }
+            let (idx, mx, _) = result?;
+            let t = std::time::Instant::now();
+            let decoded = decode::ctc_decode_argmax(&idx, &mx, &self.keys);
+            stage_stats::add(stage_stats::REC_DEC, t);
+            return Ok(decoded);
+        }
 
-        // Always return session to pool and notify waiters
+        let t = std::time::Instant::now();
+        let result = rec::run_recognition(&mut session, &data, width, self.rec_height, &self.rec_input, &self.rec_output);
+        stage_stats::add(stage_stats::REC_RUN, t);
+        // Always return the session to the pool, even when the run failed.
         {
             let mut pool = self.rec_sessions.lock();
             pool.push_back(session);
             self.rec_sessions_cvar.notify_one();
         }
+        let result = result?;
 
-        let probs = result;
-        Ok(decode::ctc_decode(&probs, &self.keys))
+        let t = std::time::Instant::now();
+        let decoded = decode::ctc_decode(&result, &self.keys);
+        stage_stats::add(stage_stats::REC_DEC, t);
+        Ok(decoded)
+    }
+
+    /// Mnemo patch: like [`prepare_region`](Self::prepare_region) for an RGB8 image.
+    pub fn prepare_region_rgb(&self, rgb: &image::RgbImage, region: &TextRegion) -> Result<PreparedCrop, PaddleOcrError> {
+        let t = std::time::Instant::now();
+        let (data, width) = rec::preprocess_region_rgb(rgb, region, self.rec_height, self.rec_width)?;
+        stage_stats::add(stage_stats::REC_PRE, t);
+        Ok(PreparedCrop { data, width })
     }
 
     /// Mnemo patch: crops a region into the recognition input without running the model.
@@ -801,8 +903,9 @@ impl OcrEngine {
         for chunk in chunks {
             let w = chunk.iter().map(|&i| crops[i].width).max().unwrap_or(4) as usize;
             // Few distinct shapes keep GPU kernels and plans reusable.
-            let w = w.div_ceil(32) * 32;
-            let mut data = vec![0.0f32; chunk.len() * 3 * h * w];
+            let w = w.div_ceil(rec_width_quant()) * rec_width_quant();
+            let n_padded = chunk.len().div_ceil(rec_batch_quant()) * rec_batch_quant();
+            let mut data = vec![0.0f32; n_padded * 3 * h * w];
             for (slot, &i) in chunk.iter().enumerate() {
                 let cw = crops[i].width as usize;
                 for c in 0..3 {
@@ -823,9 +926,11 @@ impl OcrEngine {
                 }
             };
             if let Some((idx_name, max_name)) = &self.rec_argmax {
+                let t = std::time::Instant::now();
                 let result = rec::run_recognition_batch_argmax(
-                    &mut session, data, chunk.len(), w as i64, self.rec_height, &self.rec_input, idx_name, max_name,
+                    &mut session, data, n_padded, w as i64, self.rec_height, &self.rec_input, idx_name, max_name,
                 );
+                stage_stats::add(stage_stats::REC_RUN, t);
                 {
                     let mut pool = self.rec_sessions.lock();
                     pool.push_back(session);
@@ -840,7 +945,7 @@ impl OcrEngine {
                 continue;
             }
             let result = rec::run_recognition_batch(
-                &mut session, data, chunk.len(), w as i64, self.rec_height, &self.rec_input, &self.rec_output,
+                &mut session, data, n_padded, w as i64, self.rec_height, &self.rec_input, &self.rec_output,
             );
             {
                 let mut pool = self.rec_sessions.lock();
@@ -920,10 +1025,11 @@ impl OcrEngine {
                 .map_err(|e| PaddleOcrError::General(e.to_string()));
         }
 
+        let rgb = image.to_rgb8();
         let mut blocks: Vec<OcrBlock> = regions
             .par_iter()
             .filter_map(|region| {
-                match self.recognize_text(image, region) {
+                match self.recognize_text_rgb(&rgb, region) {
                     Ok(decoded) => {
                         if decoded.text.is_empty() {
                             None
@@ -1205,6 +1311,19 @@ impl DocOrientationClassifier {
 }
 
 
+
+/// Width granularity of padded recognition batches (`MNEMO_REC_WIDTH_QUANT`, default 32).
+fn rec_width_quant() -> usize {
+    static V: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("MNEMO_REC_WIDTH_QUANT").ok().and_then(|v| v.parse().ok()).filter(|v| *v > 0).unwrap_or(32))
+}
+
+/// Batches are padded with blank crops up to a multiple of this
+/// (`MNEMO_REC_BATCH_QUANT`, default 1 = off) so a GPU sees few distinct shapes.
+fn rec_batch_quant() -> usize {
+    static V: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("MNEMO_REC_BATCH_QUANT").ok().and_then(|v| v.parse().ok()).filter(|v| *v > 0).unwrap_or(1))
+}
 
 /// Mnemo patch: a cropped, normalised recognition input (CHW, `width` columns).
 pub struct PreparedCrop {

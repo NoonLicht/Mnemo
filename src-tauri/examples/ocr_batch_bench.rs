@@ -16,6 +16,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
+static DUMP: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
 #[derive(Default, Clone, Copy)]
 struct Stages {
     det: Duration,
@@ -45,9 +47,10 @@ fn process_group(engine: &OcrEngine, imgs: &[&image::DynamicImage], batch: usize
         let regions: Vec<TextRegion> = engine.detect_text_regions(img).unwrap_or_default();
         st.det += t.elapsed();
         let t = Instant::now();
+        let rgb = img.to_rgb8();
         let prepared: Vec<PreparedCrop> = regions
             .par_iter()
-            .filter_map(|r| engine.prepare_region(img, r).ok())
+            .filter_map(|r| engine.prepare_region_rgb(&rgb, r).ok())
             .collect();
         st.prep += t.elapsed();
         crops.extend(prepared);
@@ -56,6 +59,15 @@ fn process_group(engine: &OcrEngine, imgs: &[&image::DynamicImage], batch: usize
     let out = engine.recognize_prepared(&crops, batch);
     st.rec += t.elapsed();
     st.crops = crops.len();
+    if imgs.len() == 1 && std::env::var_os("MNEMO_BENCH_DUMP").is_some() {
+        let text = out
+            .iter()
+            .flatten()
+            .map(|d| d.text.clone())
+            .collect::<Vec<_>>()
+            .join(" ");
+        DUMP.lock().unwrap().push(text);
+    }
     st.blocks = out.iter().flatten().filter(|d| !d.text.is_empty()).count();
     st
 }
@@ -122,8 +134,14 @@ fn main() {
     }) {
         files = files[a.min(files.len())..b.min(files.len())].to_vec();
     }
+    let decode_started = Instant::now();
     let images: Vec<image::DynamicImage> =
         files.iter().filter_map(|p| image::open(p).ok()).collect();
+    println!(
+        "decode: {:.2} s for {} images (one thread)",
+        decode_started.elapsed().as_secs_f64(),
+        images.len()
+    );
     println!(
         "{} images, cpu cores {}",
         images.len(),
@@ -248,6 +266,24 @@ fn main() {
             }
         }
         let wall = started.elapsed().as_secs_f64();
+        if let Some(path) = std::env::var_os("MNEMO_BENCH_DUMP") {
+            let lines = std::mem::take(&mut *DUMP.lock().unwrap());
+            let _ = std::fs::write(
+                path,
+                lines.join(
+                    "
+",
+                ),
+            );
+        }
+        let stages: Vec<String> = paddleocr_rs_onnx::stage_stats::take()
+            .into_iter()
+            .map(|(n, secs)| format!("{n} {secs:.2}"))
+            .collect();
+        println!(
+            "  stage seconds (summed over threads): {}",
+            stages.join(", ")
+        );
         println!(
             "{sc} | {wall:.1} | {:.1} | {} | {:.1} | {:.1} | {:.1} | {} | {note}",
             images.len() as f64 / wall,

@@ -158,6 +158,17 @@ pub fn preprocess_region(
     rec_height: u32,
     rec_width: Option<u32>,
 ) -> Result<(Vec<f32>, i64), PaddleOcrError> {
+    preprocess_region_rgb(&image.to_rgb8(), region, rec_height, rec_width)
+}
+
+/// Mnemo patch: same as [`preprocess_region`] for an image already converted to
+/// RGB8, so a page with many regions is converted once instead of once per region.
+pub fn preprocess_region_rgb(
+    rgb: &RgbImage,
+    region: &TextRegion,
+    rec_height: u32,
+    rec_width: Option<u32>,
+) -> Result<(Vec<f32>, i64), PaddleOcrError> {
     let bbox = order_bbox_points(region.bbox);
 
     // Reject degenerate quads that would produce an ill-conditioned homography
@@ -188,7 +199,6 @@ pub fn preprocess_region(
     let proj = Projection::from_control_points(src, dst)
         .ok_or(PaddleOcrError::Projection { reason: "Failed to create projection".to_string() })?;
 
-    let rgb = image.to_rgb8();
     let mut rectified = RgbImage::new(rw, rh);
 
     // Use Bilinear instead of Bicubic: bilinear samples a 2×2 neighbourhood
@@ -197,7 +207,7 @@ pub fn preprocess_region(
     // For OCR text rectification the quality difference is negligible.
     let warp_result = catch_unwind(AssertUnwindSafe(|| {
         warp_into(
-            &rgb,
+            rgb,
             proj,
             Interpolation::Bilinear,
             Border::Replicate,
@@ -242,15 +252,15 @@ pub fn preprocess_region(
 
     let input_w_usize = input_w as usize;
     let rec_height_usize = rec_height as usize;
-    let mut data = vec![0.0f32; 3 * input_w_usize * rec_height_usize];
-    for c in 0..3usize {
-        for y in 0..rec_height_usize {
-            for x in 0..resized_w as usize {
-                let pixel = resized.get_pixel(x as u32, y as u32);
-                let val = pixel[c] as f32 / 255.0;
-                let offset = c * input_w_usize * rec_height_usize + y * input_w_usize + x;
-                data[offset] = (val - 0.5) / 0.5;
-            }
+    let plane = input_w_usize * rec_height_usize;
+    let lut: [f32; 256] = std::array::from_fn(|v| (v as f32 / 255.0 - 0.5) / 0.5);
+    let mut data = vec![0.0f32; 3 * plane];
+    for (y, row) in resized.rows().enumerate() {
+        for (x, px) in row.enumerate() {
+            let o = y * input_w_usize + x;
+            data[o] = lut[px[0] as usize];
+            data[plane + o] = lut[px[1] as usize];
+            data[2 * plane + o] = lut[px[2] as usize];
         }
     }
 

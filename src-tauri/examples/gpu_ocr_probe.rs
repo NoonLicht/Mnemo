@@ -80,6 +80,25 @@ fn main() {
         files.len() as f64 / cpu_time.as_secs_f64()
     );
 
+    if let Some(path) = std::env::var_os("MNEMO_PROBE_DUMP") {
+        let lines: Vec<String> = files
+            .iter()
+            .zip(&cpu_text)
+            .map(|(f, t)| {
+                serde_json::json!({"file": f.file_name().map(|n| n.to_string_lossy().into_owned()), "text": norm(t)}).to_string()
+            })
+            .collect();
+        let _ = std::fs::write(
+            path,
+            lines.join(
+                "
+",
+            ),
+        );
+    }
+    if std::env::var_os("MNEMO_PROBE_CPU_ONLY").is_some() {
+        return;
+    }
     gpu_ocr::set_mode("hybrid");
     println!("mode now {}", gpu_ocr::mode());
     let boot = Instant::now();

@@ -19,7 +19,30 @@ use imageproc::point::Point;
 use ort::session::Session;
 use crate::TextRegion;
 
-const DET_LONG_SIDE: u32 = 960;
+const DET_LONG_SIDE_DEFAULT: u32 = 960;
+
+/// Longest side the detector sees. `MNEMO_DET_LONG_SIDE` overrides it (Mnemo patch),
+/// so the speed/recall trade-off can be measured.
+fn det_canvas() -> Option<u32> {
+    static VALUE: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
+    *VALUE.get_or_init(|| {
+        std::env::var("MNEMO_DET_CANVAS")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+            .filter(|v| (64..=4096).contains(v) && v % 32 == 0)
+    })
+}
+
+fn det_long_side() -> u32 {
+    static VALUE: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *VALUE.get_or_init(|| {
+        std::env::var("MNEMO_DET_LONG_SIDE")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+            .filter(|v| (160..=4096).contains(v))
+            .unwrap_or(DET_LONG_SIDE_DEFAULT)
+    })
+}
 const DET_THRESHOLD: f32 = 0.3;
 const BOX_THRESHOLD: f32 = 0.6;
 const UNCLIP_RATIO: f32 = 2.0;
@@ -30,7 +53,7 @@ const STD: [f32; 3] = [0.229, 0.224, 0.225];
 
 fn preprocess(image: &DynamicImage) -> Result<(Vec<f32>, i64, i64, f32, f32), PaddleOcrError> {
     let (w, h) = (image.width(), image.height());
-    let scale = DET_LONG_SIDE as f32 / w.max(h) as f32;
+    let scale = det_long_side() as f32 / w.max(h) as f32;
     let scale = scale.min(1.0);
     let new_w = (w as f32 * scale) as u32;
     let new_h = (h as f32 * scale) as u32;
@@ -38,25 +61,30 @@ fn preprocess(image: &DynamicImage) -> Result<(Vec<f32>, i64, i64, f32, f32), Pa
     let resized = image.resize_exact(new_w, new_h, image::imageops::FilterType::Triangle);
     let pad_w = (32 - new_w % 32) % 32;
     let pad_h = (32 - new_h % 32) % 32;
-    let padded_w = new_w + pad_w;
-    let padded_h = new_h + pad_h;
+    // `MNEMO_DET_CANVAS`: pad every input to one fixed square so a GPU sees a single
+    // input shape instead of compiling kernels for each screenshot size.
+    let (padded_w, padded_h) = match det_canvas() {
+        Some(c) => ((new_w + pad_w).max(c), (new_h + pad_h).max(c)),
+        None => (new_w + pad_w, new_h + pad_h),
+    };
 
     let rgb = resized.to_rgb8();
-    let mut padded = image::RgbImage::new(padded_w, padded_h);
-    for y in 0..new_h {
-        for x in 0..new_w {
-            padded.put_pixel(x, y, *rgb.get_pixel(x, y));
-        }
-    }
-
-    let mut data = Vec::with_capacity((3 * padded_w * padded_h) as usize);
+    let (pw, ph) = (padded_w as usize, padded_h as usize);
+    let plane = pw * ph;
+    // Padding is black, i.e. (0 - mean) / std per channel.
+    let mut data = vec![0.0f32; 3 * plane];
+    let luts: [[f32; 256]; 3] = std::array::from_fn(|c| {
+        std::array::from_fn(|v| (v as f32 / 255.0 - MEAN[c]) / STD[c])
+    });
     for c in 0..3 {
-        for y in 0..padded_h {
-            for x in 0..padded_w {
-                let pixel = padded.get_pixel(x, y);
-                let val = pixel[c] as f32 / 255.0;
-                data.push((val - MEAN[c]) / STD[c]);
-            }
+        data[c * plane..(c + 1) * plane].fill(luts[c][0]);
+    }
+    for (y, row) in rgb.rows().enumerate() {
+        for (x, px) in row.enumerate() {
+            let o = y * pw + x;
+            data[o] = luts[0][px[0] as usize];
+            data[plane + o] = luts[1][px[1] as usize];
+            data[2 * plane + o] = luts[2][px[2] as usize];
         }
     }
 
@@ -314,27 +342,55 @@ fn average_probability(prob_data: &[f32], w: usize, h: usize, poly: &[[f32; 2]; 
 ///
 /// Returns [`PaddleOcrError::Preprocessing`] if image preprocessing fails,
 /// or [`PaddleOcrError::Inference`] if the model execution fails.
-pub fn detect_text_regions(
-    session: &mut Session,
-    image: &DynamicImage,
-    input_name: &str,
-    output_name: &str,
-) -> Result<Vec<TextRegion>, PaddleOcrError> {
-    let (data, padded_h, padded_w, scale_x, scale_y) = preprocess(image)?;
-
-    let input_tensor = ort::value::Tensor::from_array((
-        [1i64, 3, padded_h, padded_w],
-        data,
-    ))?;
-
-    let outputs = session.run(ort::inputs![input_name => input_tensor])?;
-
-    let (output_shape, output_slice) = outputs[output_name].try_extract_tensor::<f32>()?;
-    let out_h = output_shape[2] as usize;
-    let out_w = output_shape[3] as usize;
-
-    let regions = postprocess(output_slice, out_h, out_w, image.width(), image.height(), scale_x, scale_y);
-    Ok(regions)
+/// Mnemo patch: a preprocessed detector input. Splitting detection into
+/// `prepare` / `infer` / `finish` lets callers hold a session only for `infer`.
+pub struct DetInput {
+    data: Vec<f32>,
+    height: i64,
+    width: i64,
+    scale: f32,
 }
 
+impl DetInput {
+    pub fn scale(&self) -> f32 {
+        self.scale
+    }
+}
 
+pub fn prepare(image: &DynamicImage) -> Result<DetInput, PaddleOcrError> {
+    let t = std::time::Instant::now();
+    let (data, height, width, scale, _) = preprocess(image)?;
+    crate::stage_stats::add(crate::stage_stats::DET_PRE, t);
+    Ok(DetInput { data, height, width, scale })
+}
+
+/// Runs the detector and returns the probability map with its size.
+pub fn infer(
+    session: &mut Session,
+    input: DetInput,
+    input_name: &str,
+    output_name: &str,
+) -> Result<(Vec<f32>, usize, usize), PaddleOcrError> {
+    let t = std::time::Instant::now();
+    let input_tensor =
+        ort::value::Tensor::from_array(([1i64, 3, input.height, input.width], input.data))?;
+    let outputs = session.run(ort::inputs![input_name => input_tensor])?;
+    let (shape, slice) = outputs[output_name].try_extract_tensor::<f32>()?;
+    let result = (slice.to_vec(), shape[2] as usize, shape[3] as usize);
+    crate::stage_stats::add(crate::stage_stats::DET_RUN, t);
+    Ok(result)
+}
+
+pub fn finish(
+    prob: &[f32],
+    out_h: usize,
+    out_w: usize,
+    orig_w: u32,
+    orig_h: u32,
+    scale: f32,
+) -> Vec<TextRegion> {
+    let t = std::time::Instant::now();
+    let regions = postprocess(prob, out_h, out_w, orig_w, orig_h, scale, scale);
+    crate::stage_stats::add(crate::stage_stats::DET_POST, t);
+    regions
+}

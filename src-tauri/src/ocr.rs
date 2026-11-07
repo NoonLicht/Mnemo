@@ -441,6 +441,20 @@ fn accurate_engine() -> Option<std::sync::Arc<paddleocr_rs_onnx::OcrEngine>> {
             return None;
         };
         let keys = keys_with_space(&dict);
+        // Reduce the class axis inside the model (ArgMax/ReduceMax): the
+        // 6906-class tensor is then never copied. Falls back to the original
+        // model if it cannot be patched; MNEMO_OCR_NO_ARGMAX=1 turns it off.
+        let rec = if std::env::var_os("MNEMO_OCR_NO_ARGMAX").is_some() {
+            rec
+        } else {
+            match crate::onnx_patch::add_argmax_outputs(&rec) {
+                Ok(patched) => patched,
+                Err(e) => {
+                    eprintln!("[Mnemo OCR] recogniser kept as is: {e}");
+                    rec
+                }
+            }
+        };
         // `ort` panics (rather than returning an error) when the dynamic
         // runtime cannot be loaded. Contain that here so the caller falls
         // back instead of losing the file to a worker panic.
@@ -735,6 +749,8 @@ mod tests {
         let fixture = Path::new(&fixture);
         let det = std::fs::read(pack.join("det.onnx")).expect("det.onnx");
         let rec = std::fs::read(pack.join("rec.onnx")).expect("rec.onnx");
+        // The production path patches the recogniser (on-device argmax); test that.
+        let rec = crate::onnx_patch::add_argmax_outputs(&rec).expect("patch");
         let dict = keys_with_space(&std::fs::read(pack.join("dict.txt")).expect("dict.txt"));
         let engine = paddleocr_rs_onnx::OcrEngine::new(&det, &rec, &dict).expect("engine");
 

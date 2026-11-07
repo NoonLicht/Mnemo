@@ -320,7 +320,7 @@
     "languageDataBold": "About → Run setup again",
     "reportIssue": "Report issue",
     "gpuTitle": "Where OCR runs (experimental)",
-    "gpuDescription": "CPU only is the default and the better choice on the PC we tested. Hybrid also reads some images on an NVIDIA GPU at the same time. It is experimental: inside the full app it took 9 to 11 s for 200 screenshots against 8.3 s on the CPU alone, although a stand-alone benchmark with a hand-balanced split got 7.7 s against 10.7 s. It needs CUDA 12 and cuDNN 9 and a one-time GPU runtime download.",
+    "gpuDescription": "CPU only is the default. Hybrid also reads some images on an NVIDIA GPU at the same time: 6.3 to 6.5 s instead of 8.0 s for 200 screenshots in our test on one PC (about 20% faster). It is experimental, needs CUDA 12 and cuDNN 9 and a one-time GPU runtime download.",
     "gpuAria": "Where OCR runs",
     "gpuCpuOption": "CPU only",
     "gpuHybridOption": "Hybrid: CPU + NVIDIA GPU (experimental)",

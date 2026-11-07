@@ -52,17 +52,47 @@ Findings:
 Decision unchanged: OCR stays on the CPU by default. A hybrid mode would cost about 1 GB of CUDA libraries, NVIDIA-only code, a modified recognition model and a work queue across two runtimes, for roughly 28% on large OCR batches. The `cuda` feature and both benchmarks stay in the tree, off by default.
 
 ## Addendum 2: hybrid mode built into the app (2026-11-07)
-Hybrid OCR now exists as an opt-in setting (`ocr_compute`, `--ocr=cpu|hybrid`): a helper process (`Mnemo.exe --ocr-gpu-worker`) loads an ONNX Runtime GPU build, patches the recogniser in memory so ArgMax/ReduceMax run on the device (`onnx_patch.rs`) and reads one image at a time when idle. The GPU runtime (311 MB) is downloaded on request and checked against GitHub's published SHA-256.
+Hybrid OCR is an opt-in setting (`ocr_compute`, `--ocr=cpu|hybrid`): a helper process (`Mnemo.exe --ocr-gpu-worker`) loads an ONNX Runtime GPU build, patches the recogniser in memory so ArgMax/ReduceMax run on the device (`onnx_patch.rs`) and reads images in groups when idle. The GPU runtime (311 MB) is downloaded on request and checked against GitHub's published SHA-256.
 
-Measured through the real entry point (`examples/gpu_ocr_probe.rs`, 200 screenshots, 12 extraction threads, one run per row, CPU-only pass 8.2-8.4 s every time):
+**Correction.** v1.1.0 was built without the `cuda` Cargo feature, so the helper's CUDA provider was never registered and the helper silently ran on the CPU of the GPU-build ONNX Runtime. The in-app numbers first recorded here (hybrid 9 to 11 s against 8.3 s CPU-only, "the GPU is not faster") measured CPU against a slower CPU and say nothing about the GPU. The examples used for those runs were built the same way. The bench examples built with `--features cuda` were right. `cuda` is now a default feature and the helper refuses to start without it (`MNEMO_CUDA_STRICT`).
 
-| Configuration | Hybrid wall time | Images read by the GPU |
-|---|---|---|
-| Normal priority (shipped) | 9.1 s | 24 |
-| Helper at above-normal priority | 11.2 s | 55-73 |
-| Helper limited to 1-2 ONNX threads | 10.9-11.6 s | 62-70 |
-| Same, spinning off, 2 rayon threads | 10.9 s | 61 |
+## Addendum 3: speed work, measured (2026-11-07, same PC: Ryzen 5 5600X 6 cores / 12 threads, RTX 5060 Ti)
+200 of the owner's screenshots, one run per row unless stated, so differences under about 0.5 s are noise.
 
-The hybrid pass was slower than the CPU alone in every configuration. The helper used about 58-67 CPU seconds for 61-74 images (roughly 0.9 CPU-s per image, three times the CPU path's cost) while the GPU stayed at 1-5% load, so the cost is in host-side work around the GPU, not in the model. The cause was not found. The stand-alone benchmark above (7.7 s) used batches of 32 images per turn and a fixed split; the app offers one image per turn.
+### CPU
+Single-thread time per stage over the 200 images (27.7 s): recognition inference 17.9 s (64%), detector inference 6.5 s (23%), recognition crop and normalise 1.4 s, detector preprocessing 1.0 s, recognition decode 0.55 s, image decoding 0.41 s, detector postprocessing 0.27 s. Image decoding is about 1.5%, so decoding once or at reduced size is not worth it; the RGB conversion is now done once per image instead of once per text region.
 
-Decision: the feature ships as experimental, off by default, and says so in Settings and the README. A next step would be profiling the helper (image decoding, detection pre- and post-processing, CUDA synchronisation) and sending it groups of images.
+| Change | Result |
+|---|---|
+| Before (detector behind one locked session) | 8.2 to 10.2 s (20 to 24 img/s) |
+| Detector session pool, preprocessing and postprocessing outside the lock | 7.2 to 8.4 s; the one-thread-per-session setting went from 12.1 s to 7.4 s |
+| + argmax inside the recogniser on the CPU path | 6.9 to 7.4 s (27 to 29 img/s) |
+| ORT threads per session, spinning, session pool size (12 combinations) | all within noise (6.9 to 7.4 s); defaults kept |
+
+The remaining gap to a perfect 12-way speed-up is the hardware: 6 physical cores.
+
+Rejected after measuring:
+- INT8, dynamic, recogniser: slower (7.6 s against 6.8 s), 95.2% exact lines on the 104-line ground-truth fixture (100% for FP32), words broken apart ("imag es"). The signed variant produced no text.
+- INT8, static, recogniser (calibrated on fixture crops): per-channel does not load in ONNX Runtime 1.23 with this opset-11 model; per-tensor gave 0% (all operators) and 28.8% (MatMul only) exact lines.
+- INT8, detector: dynamic was slower (8.5 s) and changed 73% of words; static QDQ was faster (5.7 s against 6.8 s, +17%) but changed about 35% of the words, and there is no ground truth for screenshot-size detection to prove it is not worse. This CPU has no VNNI, which limits INT8 gains.
+- Detector input size: 640 px took 4.4 s but found 20% fewer words; 736 px took 5.0 s and found 12% fewer; 1280 px took 8.4 s and found 4% more. The default 960 stays.
+
+### Hybrid (GPU helper)
+- The helper alone (CUDA actually in use): 24.4 img/s on the first 60 images, 17 img/s on images 100 to 160, using about 0.05 to 0.085 CPU-seconds per image (the CPU path uses about 0.43).
+- Fixed detector input (960 x 960 canvas): detector inference 39 ms to 9-17 ms per image. Padding recognition batches to fixed shapes made recognition slower (21 to 28-34 ms per image) and was dropped.
+- FP16 models: recognition 2x slower (9.3 s against 4.3 s per 100 images), detector unchanged; rejected.
+- Pipelining: a second thread decodes and preprocesses the next image while the GPU detects the current one. Preprocessing is 15 to 50 ms per group of 6 against 60 to 70 ms of detection, and the GPU thread waited 2 to 7 ms for it, so moving normalisation onto the GPU could save only a few percent and was not built.
+- Groups: one image per turn 10.8 img/s, groups of 8 up to 24.9 img/s in the stand-alone bench.
+- In the app flow (probe, 12 extraction threads), CPU-only 8.0 s:
+
+| Threads allowed to wait for the GPU | Helper priority | Hybrid time | Images read by the GPU |
+|---|---|---|---|
+| 6 | normal or above | 10.1 to 11.0 s | 176 to 191 |
+| 1 to 4 | normal | 7.4 to 8.0 s | 7 to 25 |
+| 2 to 5 | above-normal | 6.4 to 7.0 s | 54 to 69 |
+
+With 6 waiting threads the extraction threads queue up behind the GPU and the CPU idles; at normal priority the helper is starved by the saturated CPU engine. The shipped defaults are about 5 waiting threads per 12 logical cores and above-normal priority, giving 6.4 to 7.0 s (29 to 31 img/s), 17 to 20% faster than CPU-only in the same session. The CPU-only figure used default thread settings; against the best CPU-only runs (6.9 s) the margin is smaller. Text read on the GPU differs from the CPU's in 25 to 30% of images in small ways (words: 10966 to 11004 against 10978).
+
+Final check with the shipped defaults (three runs): hybrid 6.5, 6.4 and 6.3 s against CPU-only 8.1, 8.0 and 8.0 s, the GPU reading 65 to 70 images.
+
+Decision: hybrid stays experimental and off by default. Production checks: the patched recogniser reads the 104-line fixture at 100% exact.
