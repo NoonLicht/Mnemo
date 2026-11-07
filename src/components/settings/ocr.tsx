@@ -8,7 +8,7 @@ import {
   RefreshCw,
   TriangleAlert,
 } from "lucide-react";
-import { MnemoConfig, ModelsStatus, OcrEngine, OcrStatus } from "../../types";
+import { GpuOcrStatus, MnemoConfig, ModelsStatus, OcrEngine, OcrStatus } from "../../types";
 import { openGitHubBugReport } from "../../lib/githubIssue";
 import { formatBytes } from "../../lib/format";
 import { Switch } from "./kit";
@@ -72,6 +72,137 @@ function pickPlatform(): (typeof INSTALL_COMMANDS)[number] {
   if (/Macintosh|Mac OS/i.test(ua)) return INSTALL_COMMANDS[3];
   /* Linux webviews and anything unmatched land here — the honest default. */
   return INSTALL_COMMANDS[0];
+}
+
+/* Hybrid OCR: CPU plus an NVIDIA GPU in a helper process. Everything the user
+   needs to decide is on the row: what is missing, one download button, and a
+   live count once the helper runs. */
+function GpuOcrRow({
+  config,
+  setConfig,
+}: {
+  config: MnemoConfig;
+  setConfig: React.Dispatch<React.SetStateAction<MnemoConfig | null>>;
+}) {
+  const { t } = useTranslation("settings");
+  const [gpu, setGpu] = useState<GpuOcrStatus | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      setGpu(await invoke<GpuOcrStatus>("get_gpu_ocr_status"));
+    } catch {
+      setGpu(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const mode = config.ocr_compute ?? "cpu";
+  const live = !!gpu && (gpu.downloading || gpu.helper_starting || gpu.mode === "hybrid");
+  useEffect(() => {
+    if (!live) return;
+    const id = window.setInterval(refresh, gpu?.downloading ? 1000 : 3000);
+    return () => window.clearInterval(id);
+  }, [live, gpu?.downloading, refresh]);
+
+  const download = async () => {
+    try {
+      setGpu(await invoke<GpuOcrStatus>("download_gpu_runtime"));
+    } catch (err) {
+      console.warn("download_gpu_runtime failed:", err);
+    }
+  };
+
+  if (!gpu?.supported) return null;
+
+  const percent = Math.round((gpu.downloaded / Math.max(1, gpu.total)) * 100);
+  const runtimeLine = gpu.downloading
+    ? gpu.phase === "verifying"
+      ? t("ocr.gpuVerifying")
+      : gpu.phase === "extracting"
+        ? t("ocr.gpuExtracting")
+        : t("ocr.gpuDownloading", { percent })
+    : gpu.runtime_present
+      ? t("ocr.gpuRuntimeReady")
+      : (gpu.download_error ?? t("ocr.gpuRuntimeMissing", { size: formatBytes(gpu.runtime_bytes) }));
+
+  const status = gpu.helper_ready
+    ? t("ocr.gpuReady", { gpu: gpu.gpu_images, cpu: gpu.cpu_fallbacks })
+    : gpu.helper_starting
+      ? t("ocr.gpuStarting")
+      : gpu.mode === "hybrid"
+        ? (gpu.problem ?? t("ocr.gpuIdle"))
+        : null;
+  const statusIsProblem = !gpu.helper_ready && !gpu.helper_starting && !!gpu.problem && gpu.mode === "hybrid";
+
+  return (
+    <div className="mt-3 border-t border-line pt-3">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium text-fg">{t("ocr.gpuTitle")}</p>
+          <p className="text-[12px] leading-[18px] text-muted">{t("ocr.gpuDescription")}</p>
+        </div>
+        <select
+          aria-label={t("ocr.gpuAria")}
+          value={mode}
+          onChange={(e) =>
+            setConfig((c) =>
+              c ? { ...c, ocr_compute: e.target.value as "cpu" | "hybrid" } : c,
+            )
+          }
+          className="h-8 shrink-0 rounded-control border border-line bg-[var(--panel)] px-2 text-[11px] text-fg"
+        >
+          <option value="cpu">{t("ocr.gpuCpuOption")}</option>
+          <option value="hybrid">{t("ocr.gpuHybridOption")}</option>
+        </select>
+      </div>
+
+      <div className="mt-2 flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-[11px] text-fg">{t("ocr.gpuRuntime")}</p>
+          <p className="font-mono text-[11px] text-subtle">{runtimeLine}</p>
+        </div>
+        {!gpu.runtime_present && (
+          <button
+            type="button"
+            disabled={gpu.downloading}
+            onClick={download}
+            className="btn btn-secondary h-8 shrink-0 px-3 text-[12px]"
+          >
+            <RefreshCw className={`h-3 w-3 ${gpu.downloading ? "animate-spin" : ""}`} />
+            {t("ocr.gpuDownload")}
+          </button>
+        )}
+      </div>
+
+      {!gpu.cuda_found && (
+        <p className="mt-2 flex items-center gap-1.5 text-[11px] leading-[18px] text-warning">
+          <TriangleAlert className="h-3 w-3 shrink-0" />
+          {t("ocr.gpuNoCuda")}
+        </p>
+      )}
+      {gpu.overridden && (
+        <p className="mt-2 text-[11px] leading-[18px] text-muted">
+          {t("ocr.gpuOverride", { mode: gpu.mode })}
+        </p>
+      )}
+      {!gpu.overridden && mode !== gpu.mode && (
+        <p className="mt-2 text-[11px] leading-[18px] text-muted">{t("ocr.gpuSaveToApply")}</p>
+      )}
+      {status && (
+        <p
+          className={`mt-2 flex items-center gap-1.5 font-mono text-[11px] leading-[18px] ${
+            statusIsProblem ? "text-warning" : "text-muted"
+          }`}
+        >
+          {statusIsProblem && <TriangleAlert className="h-3 w-3 shrink-0" />}
+          {status}
+        </p>
+      )}
+    </div>
+  );
 }
 
 export function OcrField({
@@ -325,6 +456,10 @@ export function OcrField({
           </p>
         </div>
       ))}
+
+      {engine === "accurate" && status?.accurate_compiled && (
+        <GpuOcrRow config={config} setConfig={setConfig} />
+      )}
 
       {!unavailable ? null : engineMissing ? (
         /* tesseract absent — show the install command for this platform,

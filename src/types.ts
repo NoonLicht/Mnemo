@@ -178,6 +178,7 @@ export interface MnemoConfig {
   ocr_enabled?: boolean;
   ocr_max_image_bytes?: number;
   ocr_engine?: OcrEngine;
+  ocr_compute?: "cpu" | "hybrid";
   app_mode?: "launcher" | "app";
   theme?: "light" | "dark";
   language?: string | null;
@@ -464,4 +465,27 @@ export interface RootStat {
   pending: number;
   /** False when the folder does not exist right now (unplugged disk). */
   available: boolean;
+}
+
+/** State of hybrid OCR (CPU plus an NVIDIA GPU in a helper process). */
+export interface GpuOcrStatus {
+  supported: boolean;
+  mode: "cpu" | "hybrid";
+  overridden: boolean;
+  runtime_present: boolean;
+  runtime_bytes: number;
+  cuda_found: boolean;
+  cuda_dir: string;
+  cudnn_dir: string;
+  pack_present: boolean;
+  downloading: boolean;
+  downloaded: number;
+  total: number;
+  phase: string;
+  download_error: string | null;
+  helper_ready: boolean;
+  helper_starting: boolean;
+  problem: string | null;
+  gpu_images: number;
+  cpu_fallbacks: number;
 }

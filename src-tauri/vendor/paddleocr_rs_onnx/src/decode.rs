@@ -102,3 +102,22 @@ pub fn ctc_decode(probs: &[Vec<f32>], keys: &[String]) -> DecodedText {
 
     DecodedText { text, score }
 }
+
+/// Mnemo patch: CTC greedy decoding from a per-timestep argmax and max probability
+/// (the model computes both, so the full class distribution never leaves the device).
+pub fn ctc_decode_argmax(idx: &[i64], max_prob: &[f32], keys: &[String]) -> DecodedText {
+    let mut text = String::new();
+    let mut prev = 0i64;
+    let mut confidences = Vec::new();
+    for (&i, &p) in idx.iter().zip(max_prob) {
+        if i != 0 && i != prev {
+            if let Some(token) = keys.get((i - 1) as usize) {
+                text.push_str(token);
+                confidences.push(p);
+            }
+        }
+        prev = i;
+    }
+    let score = if confidences.is_empty() { 0.0 } else { confidences.iter().sum::<f32>() / confidences.len() as f32 };
+    DecodedText { text, score }
+}

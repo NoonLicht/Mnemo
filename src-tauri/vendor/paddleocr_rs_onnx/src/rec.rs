@@ -311,6 +311,42 @@ pub fn run_recognition(
     Ok(result)
 }
 
+/// Mnemo patch: runs one padded batch `[n, 3, height, width]` and returns the
+/// flat output together with its `(timesteps, classes)`.
+pub fn run_recognition_batch(
+    session: &mut Session,
+    data: Vec<f32>,
+    n: usize,
+    width: i64,
+    height: u32,
+    input_name: &str,
+    output_name: &str,
+) -> Result<(Vec<f32>, usize, usize), PaddleOcrError> {
+    let input_tensor = ort::value::Tensor::from_array(([n as i64, 3, height as i64, width], data))?;
+    let outputs = session.run(ort::inputs![input_name => input_tensor])?;
+    let (shape, slice) = outputs[output_name].try_extract_tensor::<f32>()?;
+    Ok((slice.to_vec(), shape[1] as usize, shape[2] as usize))
+}
+
+/// Mnemo patch: batch run for a model that already reduces the class axis
+/// (outputs `[n, t]` argmax indices and `[n, t]` max probabilities).
+pub fn run_recognition_batch_argmax(
+    session: &mut Session,
+    data: Vec<f32>,
+    n: usize,
+    width: i64,
+    height: u32,
+    input_name: &str,
+    idx_name: &str,
+    max_name: &str,
+) -> Result<(Vec<i64>, Vec<f32>, usize), PaddleOcrError> {
+    let input_tensor = ort::value::Tensor::from_array(([n as i64, 3, height as i64, width], data))?;
+    let outputs = session.run(ort::inputs![input_name => input_tensor])?;
+    let (shape, idx) = outputs[idx_name].try_extract_tensor::<i64>()?;
+    let (_, mx) = outputs[max_name].try_extract_tensor::<f32>()?;
+    Ok((idx.to_vec(), mx.to_vec(), shape[1] as usize))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{order_bbox_points, is_valid_quad, quad_area};

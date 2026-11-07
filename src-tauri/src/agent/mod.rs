@@ -74,6 +74,7 @@ impl HeadlessIndex {
         );
         crate::embed::set_max_semantic_units(config.content_max_semantic_units);
         crate::ocr::set_engine(&config.ocr_engine);
+        crate::gpu_ocr::set_mode(&config.ocr_compute);
         crate::indexer::extract::set_external_extractors(config.extractors.clone());
 
         // Read-write is fine: WAL lets the GUI writer and this connection

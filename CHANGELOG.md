@@ -3,6 +3,24 @@
 All notable changes to Mnemo. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [1.1.0] — 2026-11-07
+
+### Added
+- **Files per watched folder**: Settings → Folders shows how many files, folders
+  and bytes each root has in the index and how many still wait for OCR/text.
+- **Speed report**: Settings → Health → "Speed report" times the scan stages per
+  drive (NVMe SSD, SATA SSD, SATA HDD detected on Windows) and the search stages,
+  with a copy button that produces a Markdown table. Query text is never recorded.
+- **Hybrid OCR (experimental, Windows + NVIDIA)**: Settings → OCR → "Where OCR
+  runs", and `--ocr=cpu|hybrid` at launch. A helper process with a downloaded
+  ONNX Runtime GPU build reads some images on the GPU. Off by default; in our
+  own measurement it was not faster than the CPU alone (see
+  `docs/adr/0001-ocr-stays-on-cpu.md`).
+- Benchmarks: `ocr_gpu_bench`, `ocr_batch_bench`, `gpu_ocr_probe` examples.
+
+### Changed
+- Linux and macOS bundles are built by the `unix-bundles` workflow.
+
 ## [1.0.14] — 2026-11-04
 
 ### Added

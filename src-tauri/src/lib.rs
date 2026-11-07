@@ -10,6 +10,7 @@ pub mod daemon;
 pub mod doctor;
 pub mod embed;
 pub mod embedded;
+pub mod gpu_ocr;
 pub mod indexer;
 pub mod main_window;
 pub mod mnemo_commands;
@@ -18,6 +19,7 @@ pub mod mnemo_settings;
 pub mod models;
 pub mod ocr;
 pub mod ocr_indra;
+pub mod onnx_patch;
 pub mod perf;
 pub mod preview;
 pub mod query;
@@ -215,6 +217,15 @@ fn maybe_apply_pending_reset() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let args: Vec<String> = std::env::args().collect();
+    // The GPU OCR helper is this executable started with a flag: it has no
+    // window, no index and no instance lock, only an OCR engine on stdin/stdout.
+    if args.iter().any(|a| a == gpu_ocr::WORKER_FLAG) {
+        std::process::exit(gpu_ocr::worker_main());
+    }
+    if let Some(mode) = gpu_ocr::apply_cli_args(&args) {
+        eprintln!("[Mnemo OCR] --ocr={mode} for this run");
+    }
     // Install the crash log hook before anything else so startup failures are
     // captured too. It only touches the config directory path; it never loads
     // or mutates the config.
@@ -268,6 +279,7 @@ pub fn run() {
     );
     crate::embed::set_max_semantic_units(config.content_max_semantic_units);
     ocr::set_engine(&config.ocr_engine);
+    crate::gpu_ocr::set_mode(&config.ocr_compute);
 
     // Self-heal on launch, without surprise downloads. HTTP downloads only
     // happen when the user actually enabled OCR:
@@ -366,6 +378,8 @@ pub fn run() {
             commands::get_stats,
             commands::get_root_stats,
             commands::get_perf_report,
+            commands::get_gpu_ocr_status,
+            commands::download_gpu_runtime,
             commands::clear_perf_report,
             commands::set_theme,
             commands::open_file,

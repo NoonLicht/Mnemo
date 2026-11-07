@@ -5,7 +5,7 @@
 //! ```text
 //! set ORT_DYLIB_PATH=<a DirectML-enabled onnxruntime.dll>
 //! set MNEMO_OCR_PACK_DIR=<folder with det.onnx, rec.onnx, dict.txt>
-//! cargo run --example ocr_gpu_bench --features directml -- <images folder> [count]
+//! cargo run --example ocr_gpu_bench --features directml,cuda -- <images folder> [count]
 //! ```
 use paddleocr_rs_onnx::{AccelerationDevice, OcrEngine, OrderBy};
 use std::path::PathBuf;
@@ -49,7 +49,11 @@ fn main() {
         AccelerationDevice::available_devices()
     );
 
-    for device in [AccelerationDevice::Cpu, AccelerationDevice::DirectML] {
+    for device in [
+        AccelerationDevice::Cpu,
+        AccelerationDevice::DirectML,
+        AccelerationDevice::Cuda,
+    ] {
         if !device.is_available() {
             println!("{device}: not available (feature off or runtime has no such provider)");
             continue;

@@ -499,6 +499,21 @@ pub async fn clear_perf_report() -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn get_gpu_ocr_status() -> Result<crate::gpu_ocr::GpuOcrStatus, String> {
+    tauri::async_runtime::spawn_blocking(crate::gpu_ocr::status)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn download_gpu_runtime() -> Result<crate::gpu_ocr::GpuOcrStatus, String> {
+    crate::gpu_ocr::download_runtime();
+    tauri::async_runtime::spawn_blocking(crate::gpu_ocr::status)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn set_theme(theme: String, state: State<'_, AppState>) -> Result<(), String> {
     let lowered = theme.trim().to_ascii_lowercase();
     // "paper" / "void" are the pre-1.1 names for the same two themes.
@@ -1084,6 +1099,7 @@ pub async fn complete_setup(
     );
     crate::embed::set_max_semantic_units(config.content_max_semantic_units);
     crate::ocr::set_engine(&config.ocr_engine);
+    crate::gpu_ocr::set_mode(&config.ocr_compute);
     crate::indexer::extract::set_external_extractors(config.extractors.clone());
     *state.indexer.config.write() = config.clone();
     if let Some(daemon) = state.daemon.as_ref() {

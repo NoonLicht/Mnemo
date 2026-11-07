@@ -23,6 +23,9 @@ Mnemo is local-first. Everything below describes the shipped behavior.
 - An update check to GitHub (see above).
 - Model/OCR downloads fetch files from their configured source. Those requests
   go to the model host, not to Mnemo servers (there are none).
+- The optional GPU runtime for hybrid OCR (Settings → OCR, only when you press
+  Download) is fetched from `github.com/microsoft/onnxruntime` (about 311 MB,
+  SHA-256 checked). No file names, text or images are sent.
 
 ## MCP server
 

@@ -359,6 +359,49 @@ impl AccelerationDevice {
     }
 }
 
+/// Mnemo patch: CUDA provider with the cuDNN algorithm search selectable through
+/// `MNEMO_CUDA_ALGO` (`exhaustive` = ORT default, `heuristic`, `default`).
+fn configure_cuda(
+    builder: ort::session::builder::SessionBuilder,
+) -> Result<ort::session::builder::SessionBuilder, PaddleOcrError> {
+    #[cfg(feature = "cuda")]
+    {
+        use ort::ep::cuda::ConvAlgorithmSearch as S;
+        // The GPU helper shares the machine with the CPU engine; a few host
+        // threads are enough for it (`MNEMO_GPU_ORT_THREADS`).
+        let builder = match std::env::var("MNEMO_GPU_ORT_THREADS").ok().and_then(|v| v.parse::<usize>().ok()) {
+            Some(n) if n > 0 => builder
+                .with_intra_threads(n)
+                .and_then(|b| b.with_intra_op_spinning(false))
+                .map_err(|e| PaddleOcrError::General(e.to_string()))?,
+            _ => builder,
+        };
+        let search = match std::env::var("MNEMO_CUDA_ALGO").unwrap_or_default().as_str() {
+            "heuristic" => S::Heuristic,
+            "default" => S::Default,
+            _ => S::Exhaustive,
+        };
+        let ep = ort::ep::CUDA::default().with_conv_algorithm_search(search).build();
+        // Mnemo's GPU helper must never silently run on the CPU: with
+        // `MNEMO_CUDA_STRICT` a provider that fails to register is an error.
+        let strict = std::env::var_os("MNEMO_CUDA_STRICT").is_some();
+        let ep = if strict { ep.error_on_failure() } else { ep };
+        match builder.clone().with_execution_providers([ep]) {
+            Ok(b) => Ok(b),
+            Err(e) if strict => Err(PaddleOcrError::General(format!("CUDA provider failed: {e}"))),
+            Err(e) => {
+                warn!("[ep] CUDA unavailable, falling back to CPU: {}", e);
+                Ok(builder)
+            }
+        }
+    }
+    #[cfg(not(feature = "cuda"))]
+    {
+        warn!("[ep] CUDA feature disabled, falling back to CPU");
+        Ok(builder)
+    }
+}
+
 /// Configure execution providers on a session builder.
 ///
 /// If the requested EP is not available (not compiled into ORT, missing runtime
@@ -393,7 +436,7 @@ fn configure_session_builder(
     match device {
         AccelerationDevice::Cpu => Ok(builder),
         AccelerationDevice::DirectML => configure_ep!("directml", ort::ep::DirectML),
-        AccelerationDevice::Cuda => configure_ep!("cuda", ort::ep::CUDA),
+        AccelerationDevice::Cuda => configure_cuda(builder),
         AccelerationDevice::OpenVINO => configure_ep!("openvino", ort::ep::OpenVINO),
         AccelerationDevice::Nnapi => configure_ep!("nnapi", ort::ep::NNAPI),
         AccelerationDevice::Coreml => configure_ep!("coreml", ort::ep::CoreML),
@@ -441,6 +484,8 @@ pub struct OcrEngine {
     det_output: String,
     rec_input: String,
     rec_output: String,
+    /// Mnemo patch: set when the recognition model has two reduced outputs (argmax, max).
+    rec_argmax: Option<(String, String)>,
     rec_height: u32,
     rec_width: Option<u32>,
     keys: Vec<String>,
@@ -530,6 +575,9 @@ impl OcrEngine {
         let det_output = det_session.outputs()[0].name().to_string();
         let rec_input = rec_session.inputs()[0].name().to_string();
         let rec_output = rec_session.outputs()[0].name().to_string();
+        let rec_argmax = (rec_session.outputs().len() == 2).then(|| {
+            (rec_session.outputs()[0].name().to_string(), rec_session.outputs()[1].name().to_string())
+        });
         let rec_shape = rec_session.inputs()[0]
             .dtype()
             .tensor_shape()
@@ -577,7 +625,7 @@ impl OcrEngine {
             #[cfg(target_os = "ios")]
             { 1 }
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
-            { (cores / 2).max(1) }
+            { std::env::var("MNEMO_REC_POOL").ok().and_then(|v| v.parse::<usize>().ok()).filter(|n| *n > 0).unwrap_or((cores / 2).max(1)) }
         };
         info!("[ocr] creating rec session pool of size {} (cores={})", pool_size, cores);
 
@@ -598,6 +646,7 @@ impl OcrEngine {
             det_output,
             rec_input,
             rec_output,
+            rec_argmax,
             rec_height,
             rec_width,
             keys,
@@ -716,6 +765,101 @@ impl OcrEngine {
 
         let probs = result;
         Ok(decode::ctc_decode(&probs, &self.keys))
+    }
+
+    /// Mnemo patch: crops a region into the recognition input without running the model.
+    pub fn prepare_region(&self, image: &DynamicImage, region: &TextRegion) -> Result<PreparedCrop, PaddleOcrError> {
+        let (data, width) = rec::preprocess_region(image, region, self.rec_height, self.rec_width)?;
+        Ok(PreparedCrop { data, width })
+    }
+
+    /// Mnemo patch: recognises many prepared crops in padded batches of at most
+    /// `max_batch`. Crops are sorted by width so padding stays small. Results come
+    /// back in input order; a failed batch yields `None` for its crops.
+    pub fn recognize_prepared(&self, crops: &[PreparedCrop], max_batch: usize) -> Vec<Option<decode::DecodedText>> {
+        let h = self.rec_height as usize;
+        let mut order: Vec<usize> = (0..crops.len()).collect();
+        order.sort_by_key(|&i| crops[i].width);
+        let mut out: Vec<Option<decode::DecodedText>> = vec![None; crops.len()];
+        // Greedy chunks over the width-sorted crops: stop at `max_batch` crops or when
+        // the padded batch would exceed a column budget (very wide crops otherwise
+        // create multi-gigabyte `[n, t, classes]` activations).
+        let col_budget: i64 = std::env::var("MNEMO_BATCH_COLS").ok().and_then(|v| v.parse().ok()).unwrap_or(16384);
+        let mut chunks: Vec<&[usize]> = Vec::new();
+        let mut start = 0usize;
+        while start < order.len() {
+            let mut end = start + 1;
+            while end < order.len()
+                && end - start < max_batch.max(1)
+                && ((end - start + 1) as i64) * crops[order[end]].width <= col_budget
+            {
+                end += 1;
+            }
+            chunks.push(&order[start..end]);
+            start = end;
+        }
+        for chunk in chunks {
+            let w = chunk.iter().map(|&i| crops[i].width).max().unwrap_or(4) as usize;
+            // Few distinct shapes keep GPU kernels and plans reusable.
+            let w = w.div_ceil(32) * 32;
+            let mut data = vec![0.0f32; chunk.len() * 3 * h * w];
+            for (slot, &i) in chunk.iter().enumerate() {
+                let cw = crops[i].width as usize;
+                for c in 0..3 {
+                    for y in 0..h {
+                        let src = (c * h + y) * cw;
+                        let dst = ((slot * 3 + c) * h + y) * w;
+                        data[dst..dst + cw].copy_from_slice(&crops[i].data[src..src + cw]);
+                    }
+                }
+            }
+            let mut session = {
+                let mut pool = self.rec_sessions.lock();
+                loop {
+                    if let Some(s) = pool.pop_front() {
+                        break s;
+                    }
+                    self.rec_sessions_cvar.wait(&mut pool);
+                }
+            };
+            if let Some((idx_name, max_name)) = &self.rec_argmax {
+                let result = rec::run_recognition_batch_argmax(
+                    &mut session, data, chunk.len(), w as i64, self.rec_height, &self.rec_input, idx_name, max_name,
+                );
+                {
+                    let mut pool = self.rec_sessions.lock();
+                    pool.push_back(session);
+                    self.rec_sessions_cvar.notify_one();
+                }
+                let (idx, mx, steps) = match result { Ok(v) => v, Err(e) => { eprintln!("rec batch failed: {e}"); continue } };
+                for (slot, &i) in chunk.iter().enumerate() {
+                    let keep = (((steps as f64) * (crops[i].width as f64) / (w as f64)).ceil() as usize).clamp(1, steps);
+                    let base = slot * steps;
+                    out[i] = Some(decode::ctc_decode_argmax(&idx[base..base + keep], &mx[base..base + keep], &self.keys));
+                }
+                continue;
+            }
+            let result = rec::run_recognition_batch(
+                &mut session, data, chunk.len(), w as i64, self.rec_height, &self.rec_input, &self.rec_output,
+            );
+            {
+                let mut pool = self.rec_sessions.lock();
+                pool.push_back(session);
+                self.rec_sessions_cvar.notify_one();
+            }
+            let Ok((flat, steps, classes)) = result else { continue };
+            for (slot, &i) in chunk.iter().enumerate() {
+                // Keep only the timesteps that belong to this crop, not to its padding.
+                let keep = ((steps as f64) * (crops[i].width as f64) / (w as f64)).ceil() as usize;
+                let keep = keep.clamp(1, steps);
+                let base = slot * steps * classes;
+                let probs: Vec<Vec<f32>> = (0..keep)
+                    .map(|t| flat[base + t * classes..base + (t + 1) * classes].to_vec())
+                    .collect();
+                out[i] = Some(decode::ctc_decode(&probs, &self.keys));
+            }
+        }
+        out
     }
 
     /// Complete OCR pipeline: detection + recognition.
@@ -1061,3 +1205,22 @@ impl DocOrientationClassifier {
 }
 
 
+
+/// Mnemo patch: a cropped, normalised recognition input (CHW, `width` columns).
+pub struct PreparedCrop {
+    pub data: Vec<f32>,
+    pub width: i64,
+}
+
+impl PreparedCrop {
+    /// Plain accessors for callers outside the crate.
+    pub fn width(&self) -> i64 {
+        self.width
+    }
+}
+
+/// Mnemo patch: converts a recognised text region into an [`OcrBlock`] rectangle.
+pub fn block_from(region: &TextRegion, decoded: decode::DecodedText) -> OcrBlock {
+    let (x, y, width, height) = bbox_to_rect(&region.bbox);
+    OcrBlock { text: decoded.text, confidence: decoded.score, x, y, width, height }
+}

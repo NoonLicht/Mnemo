@@ -146,6 +146,11 @@ pub struct MnemoConfig {
     /// to PP-OCR, PP-OCR to Tesseract, when a pack is absent.
     #[serde(default = "default_ocr_engine")]
     pub ocr_engine: String,
+    /// Where PP-OCR runs: `cpu` (default) or `hybrid` (CPU plus an NVIDIA GPU
+    /// in a helper process; needs a downloaded GPU runtime and CUDA 12 +
+    /// cuDNN 9). `--ocr=cpu|hybrid` overrides it for one run.
+    #[serde(default = "default_ocr_compute")]
+    pub ocr_compute: String,
     /// Opt-in external extractors keyed by extension or MIME type. Empty by
     /// default: no external command ever runs without explicit configuration.
     #[serde(default)]
@@ -223,6 +228,10 @@ fn default_true() -> bool {
 /// cannot run (Intel Macs) the engine selection falls back to Tesseract.
 fn default_ocr_engine() -> String {
     "accurate".to_string()
+}
+
+fn default_ocr_compute() -> String {
+    "cpu".to_string()
 }
 
 fn default_app_mode() -> String {
@@ -447,6 +456,7 @@ impl Default for MnemoConfig {
             ocr_enabled: true,
             ocr_max_image_bytes: 0,
             ocr_engine: default_ocr_engine(),
+            ocr_compute: default_ocr_compute(),
             app_mode: default_app_mode(),
             theme: default_theme(),
             language: None,

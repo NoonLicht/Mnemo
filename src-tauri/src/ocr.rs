@@ -337,6 +337,10 @@ pub fn extract_image_ocr(path: &Path) -> OcrOutcome {
         let Some(engine) = accurate_engine() else {
             return OcrOutcome::Unavailable;
         };
+        // Hybrid mode: an idle GPU helper takes the image, otherwise the CPU does.
+        if let Some(outcome) = crate::gpu_ocr::try_offload(path) {
+            return outcome;
+        }
         let Ok(image) = image::open(path) else {
             return OcrOutcome::NoText;
         };

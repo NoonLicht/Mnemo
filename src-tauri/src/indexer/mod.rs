@@ -1681,6 +1681,7 @@ impl IndexerManager {
         crate::indexer::extract::image::reset_tesseract_probe();
         crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
         crate::ocr::set_engine(&config.ocr_engine);
+        crate::gpu_ocr::set_mode(&config.ocr_compute);
         if !config.ocr_enabled {
             return false;
         }
@@ -1781,6 +1782,7 @@ impl IndexerManager {
             eprintln!("[Mnemo] Content caps raised: {marked} file(s) queued for re-read");
             reindex = true;
         }
+        crate::gpu_ocr::set_mode(&config.ocr_compute);
         if ocr_changed {
             crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
             crate::ocr::set_engine(&config.ocr_engine);
