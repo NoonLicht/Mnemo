@@ -44,7 +44,7 @@ On first start choose the folders to index, then press **Index**. Changing the f
 
 By default the CPU reads text in images, and on the PC we tested that is the better choice. With an NVIDIA GPU you can turn on **hybrid mode**, where the GPU reads some of the images at the same time.
 
-**Honest numbers (RTX 5060 Ti, 12 cores, 200 screenshots, one run each):** the CPU alone took 8.3 s. Hybrid inside the app took 9 to 11 s, so it was slower: the GPU helper needs a lot of CPU time and takes it from the main engine. A stand-alone benchmark with two processes and a hand-tuned split got 7.7 s against 10.7 s, but that did not carry over into the app. Details: [docs/adr/0001-ocr-stays-on-cpu.md](docs/adr/0001-ocr-stays-on-cpu.md).
+**Honest numbers (200 screenshots, one run each):** the CPU alone took 8.3 s. Hybrid inside the app took 9 to 11 s, so it was slower: the GPU helper needs a lot of CPU time and takes it from the main engine. A stand-alone benchmark with two processes and a hand-tuned split got 7.7 s against 10.7 s, but that did not carry over into the app. Details: [docs/adr/0001-ocr-stays-on-cpu.md](docs/adr/0001-ocr-stays-on-cpu.md).
 
 You need CUDA 12 and cuDNN 9 installed, plus a one-time download of the GPU runtime (ONNX Runtime with CUDA, about 311 MB from github.com/microsoft/onnxruntime, verified with SHA-256). If something is missing, OCR stays on the CPU and Settings says what.
 
