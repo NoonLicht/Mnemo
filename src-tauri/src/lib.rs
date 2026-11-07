@@ -18,8 +18,10 @@ pub mod mnemo_settings;
 pub mod models;
 pub mod ocr;
 pub mod ocr_indra;
+pub mod perf;
 pub mod preview;
 pub mod query;
+pub mod root_stats;
 pub mod search;
 pub mod updater;
 pub mod util;
@@ -362,6 +364,9 @@ pub fn run() {
             commands::legacy_search,
             commands::get_indexing_status,
             commands::get_stats,
+            commands::get_root_stats,
+            commands::get_perf_report,
+            commands::clear_perf_report,
             commands::set_theme,
             commands::open_file,
             commands::open_folder,

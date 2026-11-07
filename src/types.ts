@@ -453,3 +453,15 @@ export interface UpdateStatus {
   downloaded_path?: string | null;
   ready_to_install: boolean;
 }
+
+/** Per-watched-folder counts from the index (Settings → Folders). */
+export interface RootStat {
+  path: string;
+  files: number;
+  dirs: number;
+  bytes: number;
+  /** Files whose text/OCR extraction is still queued. */
+  pending: number;
+  /** False when the folder does not exist right now (unplugged disk). */
+  available: boolean;
+}

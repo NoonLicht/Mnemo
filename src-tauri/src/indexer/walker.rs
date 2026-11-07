@@ -352,7 +352,21 @@ pub fn walk_directories(
     excluded_dirs: &[String],
     include_ignored: bool,
 ) -> Vec<FileEntry> {
+    walk_directories_timed(dirs, excluded_dirs, include_ignored).0
+}
+
+/// Per-root walk cost: root, wall-clock time and entries found.
+pub type RootWalk = (PathBuf, std::time::Duration, u64);
+
+/// Same walk as [`walk_directories`], also reporting how long each root took
+/// and how many entries it yielded, for the speed report.
+pub fn walk_directories_timed(
+    dirs: &[PathBuf],
+    excluded_dirs: &[String],
+    include_ignored: bool,
+) -> (Vec<FileEntry>, Vec<RootWalk>) {
     let mut result = Vec::new();
+    let mut timings: Vec<RootWalk> = Vec::new();
     let mut ignore_dirs: Vec<PathBuf> = Vec::new();
     let excluded_set: HashSet<String> = excluded_dirs.iter().map(|s| s.to_lowercase()).collect();
 
@@ -383,6 +397,8 @@ pub fn walk_directories(
         if !root.exists() {
             continue;
         }
+        let root_started = std::time::Instant::now();
+        let before = result.len();
 
         if cfg!(windows) {
             let prune = prunes_for_roots(dirs);
@@ -391,6 +407,11 @@ pub fn walk_directories(
                 ignore_dirs.extend(found.iter().filter(|e| e.is_dir).map(|e| e.path.clone()));
             }
             result.extend(found);
+            timings.push((
+                root.clone(),
+                root_started.elapsed(),
+                (result.len() - before) as u64,
+            ));
             continue;
         }
 
@@ -493,6 +514,11 @@ pub fn walk_directories(
 
             result.push(file_entry);
         }
+        timings.push((
+            root.clone(),
+            root_started.elapsed(),
+            (result.len() - before) as u64,
+        ));
     }
 
     // Ignore parity: probe each visited directory for `.gitignore` /
@@ -504,7 +530,7 @@ pub fn walk_directories(
         }
     }
 
-    result
+    (result, timings)
 }
 
 #[cfg(test)]
@@ -613,5 +639,27 @@ mod tests {
 
         assert!(std::fs::remove_dir_all(&base).is_ok());
         let _ = config_dir;
+    }
+    #[test]
+    fn timed_walk_reports_every_root() {
+        let base = std::env::temp_dir().join(format!("mnemo-walk-timed-{}", std::process::id()));
+        let a = base.join("a");
+        let b = base.join("b");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(a.join("1.txt"), "x").unwrap();
+        std::fs::write(a.join("2.txt"), "x").unwrap();
+        std::fs::write(b.join("3.txt"), "x").unwrap();
+
+        let (entries, timings) = walk_directories_timed(&[a.clone(), b.clone()], &[], true);
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert_eq!(timings.len(), 2);
+        assert_eq!(timings[0].0, a);
+        assert_eq!(timings[1].0, b);
+        assert!(timings[0].2 >= 2, "root a yielded {}", timings[0].2);
+        assert!(timings[1].2 >= 1, "root b yielded {}", timings[1].2);
+        let counted: u64 = timings.iter().map(|t| t.2).sum();
+        assert_eq!(counted as usize, entries.len());
     }
 }

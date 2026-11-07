@@ -41,8 +41,24 @@ fn generate_embedded_assets() {
     let _ = std::fs::write(out.join("embedded_assets.rs"), code);
 }
 
+/// Test binaries and examples get no application manifest, so an optimised
+/// build that keeps the tray/dialog code fails to start with
+/// `STATUS_ENTRYPOINT_NOT_FOUND` (`TaskDialogIndirect` needs Common Controls
+/// v6). Declare the dependency for test binaries only.
+fn embed_common_controls_manifest_for_tests() {
+    if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc")
+        && std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
+    {
+        println!("cargo:rustc-link-arg-tests=/MANIFEST:EMBED");
+        println!(
+            "cargo:rustc-link-arg-tests=/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'"
+        );
+    }
+}
+
 fn main() {
     tauri_build::build();
+    embed_common_controls_manifest_for_tests();
     generate_embedded_assets();
 
     // Copy onnxruntime library from src-tauri to target directories

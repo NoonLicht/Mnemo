@@ -16,7 +16,7 @@ use crate::indexer::content::{
     ContentIndex, is_indexable_extension, is_indexable_file_name, read_text_content_checked,
 };
 use crate::indexer::metadata::MetadataStore;
-use crate::indexer::walker::{FileEntry, is_cloud_placeholder_path, walk_directories};
+use crate::indexer::walker::{FileEntry, is_cloud_placeholder_path, walk_directories_timed};
 use crate::indexer::watcher::{WatcherHandle, start_file_watcher};
 use crate::search::{SearchDispatcher, SearchResponse, SortOrder};
 use parking_lot::{Mutex, RwLock};
@@ -690,7 +690,10 @@ impl IndexerManager {
             }
 
             // Phase 1: Collect all entries (jwalk is already parallel internally).
-            let all_entries = walk_directories(&watched_dirs, &excluded_dirs, include_ignored);
+            let scan_started = Instant::now();
+            let (all_entries, walk_timings) =
+                walk_directories_timed(&watched_dirs, &excluded_dirs, include_ignored);
+            let walk_elapsed = scan_started.elapsed();
             let total_entries = all_entries.len();
             {
                 let mut st = status.write();
@@ -700,6 +703,7 @@ impl IndexerManager {
                 Self::emit_status(&app_handle, &st);
             }
 
+            let meta_started = Instant::now();
             // Phase 2a: Filter excluded extensions, check incremental, add metadata.
             // Collect indexable files for parallel content extraction.
             let mut to_extract: Vec<ExtractJob> = Vec::new();
@@ -769,6 +773,7 @@ impl IndexerManager {
                 }
             }
 
+            let metadata_elapsed = meta_started.elapsed();
             // Index text and small files first. Images (OCR) are the slow tail,
             // so this makes the lexical index useful earlier in the crawl while
             // the same total amount of work is done. Within each class, newest
@@ -824,6 +829,10 @@ impl IndexerManager {
                 }
             }
 
+            let extract_started = Instant::now();
+            // Per-drive extraction cost for the speed report.
+            let perf_acc = Arc::new(crate::perf::ScanAccumulator::new(&watched_dirs));
+            let producer_perf = Arc::clone(&perf_acc);
             let extract_done = AtomicUsize::new(0);
             let mut extracted_paths: HashSet<PathBuf> = HashSet::new();
             // Files whose extraction did not finish this crawl. They keep (or
@@ -870,9 +879,16 @@ impl IndexerManager {
                         // The configured text cap (`content_max_text_bytes`),
                         // not a fixed 1 MB: a hard-coded limit here made the
                         // "deep" content setting unable to go past 1 MB.
+                        let read_started = Instant::now();
                         let (content, retry) = read_text_content_checked(
                             &job.path,
                             crate::indexer::extract::content_max_text_bytes() as u64,
+                        );
+                        producer_perf.record(
+                            &job.path,
+                            job.is_image,
+                            job.size,
+                            read_started.elapsed(),
                         );
                         let image_sig = job.is_image.then(|| {
                             content
@@ -1051,6 +1067,8 @@ impl IndexerManager {
                 }
             });
 
+            let extract_elapsed = extract_started.elapsed();
+            let finalize_started = Instant::now();
             {
                 let mut st = status.write();
                 st.extract_done = extract_total;
@@ -1167,6 +1185,19 @@ impl IndexerManager {
             }
 
             last_reconcile_unix_secs.store(now_unix_secs(), Ordering::Relaxed);
+
+            // Speed report: stage times and per-drive cost of this scan.
+            crate::perf::record_scan(crate::perf::ScanPerf {
+                at_unix: now_unix_secs(),
+                total_ms: scan_started.elapsed().as_secs_f64() * 1000.0,
+                walk_ms: walk_elapsed.as_secs_f64() * 1000.0,
+                metadata_ms: metadata_elapsed.as_secs_f64() * 1000.0,
+                extract_ms: extract_elapsed.as_secs_f64() * 1000.0,
+                finalize_ms: finalize_started.elapsed().as_secs_f64() * 1000.0,
+                entries: total_entries as u64,
+                extract_jobs: extract_total as u64,
+                roots: perf_acc.into_roots(&walk_timings),
+            });
 
             // First-scan completion gate: the first full crawl marks setup done.
             {

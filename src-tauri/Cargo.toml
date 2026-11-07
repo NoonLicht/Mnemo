@@ -70,7 +70,7 @@ tempfile = "3"
 
 [target.'cfg(windows)'.dependencies]
 # Foreground-window hook and idle detection for the opt-in activity timeline.
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_Accessibility", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_System_SystemInformation", "Win32_UI_Input_KeyboardAndMouse", "Win32_Security_Cryptography"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_Accessibility", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_System_SystemInformation", "Win32_UI_Input_KeyboardAndMouse", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_IO"] }
 # Direct process enumeration for the webview cleanup: taskkill rejects a
 # `PPID eq` filter ("The search filter cannot be recognized"), so the child
 # scan has to run in-process via the Toolhelp32 snapshot API.
@@ -105,6 +105,10 @@ debug = false
 default = ["accurate-ocr"]
 accurate-ocr = ["dep:paddleocr_rs_onnx", "dep:ort"]
 smart-embeddings = ["dep:ort"]
+# Opt-in GPU path for PP-OCR through DirectML. Off by default: it only helps if
+# the loaded onnxruntime.dll was built with the DirectML provider, and the
+# speed-up has to be measured first (examples/ocr_gpu_bench.rs).
+directml = ["accurate-ocr", "paddleocr_rs_onnx/directml"]
 
 # Vendored paddleocr_rs_onnx 0.2.8 (MIT) with one change: its ONNX Runtime
 # environment is public (`shared_environment`), because `ort` allows a single

@@ -36,6 +36,7 @@ import { Card, Field, Switch, Stepper, SectionHeader, reasonFrom } from "./setti
 import { WindowModePicker } from "./WindowModePicker";
 import { OcrField } from "./settings/ocr";
 import { StatsForNerds } from "./settings/stats";
+import { PerfReportCard } from "./settings/perf";
 import { DoctorSection } from "./settings/doctor";
 import { ModelFilesCard } from "./settings/models";
 import { formatBytes, formatComma } from "../lib/format";
@@ -47,7 +48,7 @@ import {
   installUpdateAndRestart,
   formatReleaseDate,
 } from "../lib/updater";
-import type { UpdateInfo, UpdateStatus } from "../types";
+import type { RootStat, UpdateInfo, UpdateStatus } from "../types";
 
 export interface SettingsProps {
   onClose: () => void;
@@ -252,6 +253,7 @@ function renderSection(
         <>
           <DoctorSection />
           <StatsForNerds />
+          <PerfReportCard />
           <BetaSection config={config} setConfig={setConfig} />
         </>
       );
@@ -506,6 +508,26 @@ function FoldersSection({
   const { t } = useTranslation("settings");
   const [input, setInput] = useState("");
   const { stats } = useStats(null);
+  const [rootStats, setRootStats] = useState<Record<string, RootStat>>({});
+
+  // Per-folder counts straight from the index. Polled while the tab is open so
+  // a scan in progress visibly fills each root; a root that stays at 0 never
+  // got walked (disk unplugged, access denied, excluded).
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      invoke<RootStat[]>("get_root_stats")
+        .then((rows) => {
+          if (alive) setRootStats(Object.fromEntries(rows.map((r) => [r.path, r])));
+        })
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 5000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
 
   const addDir = () => {
     const t = input.trim();
@@ -538,6 +560,28 @@ function FoldersSection({
                 {dir.split("/").filter(Boolean).pop() || dir}
               </p>
               <p className="truncate font-mono text-[11px] text-subtle">{dir}</p>
+              {rootStats[dir] ? (
+                <p
+                  className={`mt-0.5 truncate font-mono text-[11px] ${
+                    !rootStats[dir].available || rootStats[dir].files === 0
+                      ? "text-warning"
+                      : "text-muted"
+                  }`}
+                >
+                  {!rootStats[dir].available
+                    ? t("folders.unavailable")
+                    : rootStats[dir].files === 0
+                      ? t("folders.nothingIndexed")
+                      : t("folders.rootStats", {
+                          files: formatComma(rootStats[dir].files),
+                          folders: formatComma(rootStats[dir].dirs),
+                          size: formatBytes(rootStats[dir].bytes),
+                        })}
+                  {rootStats[dir].available && rootStats[dir].pending > 0
+                    ? ` · ${t("folders.pending", { count: formatComma(rootStats[dir].pending) })}`
+                    : ""}
+                </p>
+              ) : null}
             </div>
             <button
               type="button"

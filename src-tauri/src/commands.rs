@@ -466,6 +466,38 @@ pub async fn get_stats(state: State<'_, AppState>) -> Result<serde_json::Value, 
     stats_for(&state.indexer)
 }
 
+/// Per-watched-folder file counts, so a root that never got walked is visible
+/// in Settings → Folders instead of hiding inside the global total.
+#[tauri::command]
+pub async fn get_root_stats(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::root_stats::RootStat>, String> {
+    let indexer = std::sync::Arc::clone(&state.indexer);
+    tauri::async_runtime::spawn_blocking(move || {
+        let roots = indexer.config.read().watched_dirs.clone();
+        let metadata = indexer.metadata.read();
+        crate::root_stats::compute(&metadata, &roots)
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Markdown speed report (stage times per drive and per search), ready to
+/// paste into an issue. Built from local records only.
+#[tauri::command]
+pub async fn get_perf_report() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(crate::perf::report_markdown)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Forgets the recorded scan and search timings.
+#[tauri::command]
+pub async fn clear_perf_report() -> Result<(), String> {
+    crate::perf::clear();
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn set_theme(theme: String, state: State<'_, AppState>) -> Result<(), String> {
     let lowered = theme.trim().to_ascii_lowercase();

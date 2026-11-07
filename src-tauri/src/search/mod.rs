@@ -803,6 +803,8 @@ impl SearchDispatcher {
         start_after: Option<&str>,
     ) -> SearchResponse {
         let start_time = SystemTime::now();
+        // Stage timings for the local speed report (query text is not kept).
+        let mut clock = crate::perf::StageClock::start();
         let trimmed = raw_query.trim();
         if trimmed.is_empty() {
             return SearchResponse {
@@ -844,6 +846,7 @@ impl SearchDispatcher {
             .into_par_iter()
             .map(|i| metadata.materialize(i as u32))
             .collect();
+        clock.mark("intent + load index entries");
         let needs_trie = query_needs_trie(effective_query);
         let path_index: HashMap<PathBuf, usize> = if needs_trie {
             entries
@@ -1104,6 +1107,12 @@ impl SearchDispatcher {
                 .elapsed()
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
+            clock.finish(
+                "exhaustive",
+                raw_query.chars().count(),
+                total,
+                metadata.len(),
+            );
             return SearchResponse {
                 results,
                 seq,
@@ -1117,6 +1126,7 @@ impl SearchDispatcher {
             };
         }
 
+        clock.mark("parse + scopes + filters");
         // 3. Tier 1: Fuzzy filename search (< 5ms)
         let mut fuzzy_ranks: HashMap<usize, usize> = HashMap::new();
         if !fuzzy_text.is_empty() {
@@ -1129,6 +1139,7 @@ impl SearchDispatcher {
             }
         }
 
+        clock.mark("filename fuzzy match");
         // 4. Tier 2: Tantivy BM25 content search (< 50ms)
         // A single include scope is pushed into the Tantivy query as a path
         // prefix, so BM25 never scores documents outside the scope.
@@ -1156,6 +1167,7 @@ impl SearchDispatcher {
             }
         }
 
+        clock.mark("content BM25 (tantivy)");
         // 5. Tier 3: Static semantic vector scan (< 5ms)
         // Weak vectors are kept in the map (with their raw cosine) so hits that
         // also match fuzzy/BM25 still contribute; the floor below is applied
@@ -1245,6 +1257,7 @@ impl SearchDispatcher {
             }
         }
 
+        clock.mark("semantic + visual vectors");
         // 6. 4-tier RRF Fusion (k = 60.0) with dynamic route weights
         struct MatchCandidate {
             entry_idx: usize,
@@ -1451,6 +1464,7 @@ impl SearchDispatcher {
             }
         }
 
+        clock.mark("RRF fusion");
         // 7. Apply ranking bonuses & build SearchResults
         // Normalize RRF before bonuses so an absolute depth term cannot
         // dominate the fused relevance signal.
@@ -1519,6 +1533,7 @@ impl SearchDispatcher {
             })
             .collect();
 
+        clock.mark("ranking bonuses");
         // 8. Ordering: best-match by default; explicit sort when requested.
         apply_sort(&mut results, sort);
         group_bursts(&mut results, |result| {
@@ -1537,6 +1552,7 @@ impl SearchDispatcher {
             results.truncate(limit);
         }
 
+        clock.mark("order + facets");
         // 9. Post-rank snippet extraction for top 20 files.
         //
         // `get_snippet_fast` reads plain text directly and otherwise only
@@ -1561,6 +1577,8 @@ impl SearchDispatcher {
                 .push("No results match the active filters; try removing one.".to_string());
         }
 
+        clock.mark("snippets");
+        clock.finish("ranked", raw_query.chars().count(), total, metadata.len());
         let elapsed = start_time
             .elapsed()
             .map(|d| d.as_millis() as u64)

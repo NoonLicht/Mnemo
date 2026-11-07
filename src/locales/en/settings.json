@@ -98,7 +98,11 @@
     "drop": "Drop folders here to add them for watching",
     "placeholder": "/absolute/path/to/directory",
     "add": "Add",
-    "summary": "{{files}} files indexed across {{folders}} folders"
+    "summary": "{{files}} files indexed across {{folders}} folders",
+    "rootStats": "{{files}} files · {{folders}} folders · {{size}}",
+    "pending": "waiting for extraction: {{count}}",
+    "nothingIndexed": "nothing indexed yet",
+    "unavailable": "folder unavailable (disk unplugged?)"
   },
   "exclusions": {
     "presets": "Presets",
@@ -340,6 +344,15 @@
     "reportOpened": "Opening GitHub…",
     "reportTooltip": "Open a pre-filled issue report on GitHub",
     "hasIssuesNotice": "Diagnostics flagged an issue. You can open a pre-filled bug report directly on GitHub."
+  },
+  "perf": {
+    "title": "Speed report",
+    "description": "Stage times of the last scan for each drive (with its NVMe, SATA SSD or HDD type) and of recent searches. Kept only on this computer; query text is never recorded. Copy it and paste it into GitHub.",
+    "empty": "No data yet. Run an index and do a few searches.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "refresh": "Refresh",
+    "clear": "Clear"
   },
   "stats": {
     "polled": "polled from get_stats every 2 s",
